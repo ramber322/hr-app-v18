@@ -1,18 +1,25 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation  } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { supabase } from "../lib/supabase";
 import { reassessApplication } from "../services/reassessApplication"; 
 import "../styles/MyApplicationsPage.css";
 import locationLogo from '../assets/icon-location.png';
 import calendarminimalLogo from '../assets/calendar-minimal-icon.png';
-
-import { CircularCheckSuccessIcon, BasiconsDocumentIcon, BasiconsBriefcaseIcon, CheckIcon, BasiconsFolderIcon } from "../components/icons/CustomIcons";
+import { CircularCheckSuccessIcon,BasiconsClockDownIcon, BasiconsDocumentIcon, BasiconsBriefcaseIcon, CheckIcon, BasiconsFolderIcon } from "../components/icons/CustomIcons";
 import Loader from '../components/Loader';
 
 export default function MyApplicationsPage() {
-  
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+  setRefreshing(true);
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) await loadApplications(user.id);
+  setRefreshing(false);
+};
   const navigate = useNavigate();
+  const location = useLocation();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedApplication, setSelectedApplication] = useState(null);
@@ -48,9 +55,56 @@ export default function MyApplicationsPage() {
     "professional": "Career Service Professional"
   };
 
-  useEffect(() => {
+    useEffect(() => {
     checkUserAndLoadApplications();
   }, []);
+
+  // If arriving from Browse Jobs with a submission still in flight — poll until it lands
+  useEffect(() => {
+    const expecting = location.state?.expectNewApplication;
+    if (!expecting) return;
+
+    let cancelled = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 20; // 20 × 1.5s = 30s max
+
+    const poll = async () => {
+      if (cancelled || attempts >= MAX_ATTEMPTS) return;
+      attempts++;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: existing } = await supabase
+        .from('applications')
+        .select('id')
+        .eq('applicant_id', user.id)
+        .neq('status', 'WITHDRAWN');
+
+      if (existing && existing.length > applications.length) {
+        await loadApplications(user.id);
+      } else {
+        setTimeout(poll, 1500);
+      }
+    };
+
+    poll();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Poll while any application is still being screened
+  useEffect(() => {
+    const anyProcessing = applications.some(a => a.screening_status === 'PROCESSING');
+    if (!anyProcessing) return;
+
+    const interval = setInterval(async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) await loadApplications(user.id);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [applications]);
 
   const checkUserAndLoadApplications = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -389,12 +443,12 @@ export default function MyApplicationsPage() {
   const [reassessSuccess, setReassessSuccess] = useState(null);
   const handleReassess = async (app) => {
   if (!reassessFile) {
-  const docLabel = reassessDocType === 'pds' ? 'PDS'
-    : reassessDocType === 'transcript' ? 'Transcript'
-    : 'Performance Rating';
-  setReassessError(`Please choose a new ${docLabel} file.`);
-  return;
-}
+    const docLabel = reassessDocType === 'pds' ? 'PDS'
+      : reassessDocType === 'transcript' ? 'Transcript'
+      : 'Performance Rating';
+    setReassessError(`Please choose a new ${docLabel} file.`);
+    return;
+  }
 
   setReassessLoading(true);
   setReassessError('');
@@ -403,17 +457,30 @@ export default function MyApplicationsPage() {
 
   try {
     const result = await reassessApplication({
-  application: app,
-  newFile: reassessFile,
-  docType: reassessDocType,
-});
-const { newScore, docType } = result;
+      application: app,
+      newFile: reassessFile,
+      docType: reassessDocType,
+    });
+    const { docType, screeningInProgress } = result;
 
-    setReassessApp(null);
+   setReassessApp(null);
     setReassessFile(null);
+
+        if (screeningInProgress) {
+      setReassessSuccess({ app, oldScore, newScore: null, inProgress: true });
+    } else {
+      // Transcript/PR: show success popup on top of Details modal
+      setReassessSuccess({
+        app,
+        oldScore: null,
+        newScore: null,
+        inProgress: false,
+        isDocUpdate: true,
+        docType,
+      });
+    }
     await loadApplications();
 
-    // Refresh the open Details modal if it's still visible
     if (showDetailsModal && selectedApplication?.id === app.id) {
       const { data: updatedApp } = await supabase
         .from('applications')
@@ -422,15 +489,6 @@ const { newScore, docType } = result;
         .single();
       setSelectedApplication({ ...updatedApp, job_postings: app.job_postings });
     }
-
-    // 🆕 Show the success popup only for PDS re-assessment (score changes)
-if (docType === 'pds') {
-  setReassessSuccess({ app, oldScore, newScore });
-} else {
-  setSuccessMessage(`${docType === 'transcript' ? 'Transcript' : 'Performance Rating'} updated successfully!`);
-  setTimeout(() => setSuccessMessage(null), 3000);
-}
-
 
   } catch (err) {
     console.error('Re-assessment error:', err);
@@ -446,10 +504,54 @@ if (docType === 'pds') {
       <Navbar userRole="applicant" />
       
       <div className="applications-container">
-        <div className="page-header">
-          <h1>My Applications</h1>
-          <p>Track the status of all your job applications</p>
-        </div>
+        <div
+  className="page-header"
+  style={{
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    flexWrap: 'wrap',
+    gap: '12px',
+  }}
+>
+  <div>
+    <h1 style = {{marginBottom: '20px'}}>My Applications</h1>
+    <p  >Track the status of all your job applications</p>
+  </div>
+
+  <button
+    onClick={handleRefresh}
+    disabled={refreshing}
+    style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      marginTop: '55px',
+      gap: '8px',
+      padding: '8px 16px',
+      background: '#4F46E5',
+      color: 'white',
+      border: 'none',
+      borderRadius: '8px',
+      fontSize: '13px',
+      fontWeight: 600,
+      cursor: refreshing ? 'not-allowed' : 'pointer',
+      opacity: refreshing ? 0.6 : 1,
+      flexShrink: 0,
+      
+    }}
+  >
+    <span style={{
+      display: 'inline-block',
+      width: '14px',
+      height: '14px',
+      border: '2px solid white',
+      borderTopColor: 'transparent',
+      borderRadius: '50%',
+      animation: refreshing ? 'spin 1s linear infinite' : 'none',
+    }} />
+    {refreshing ? 'Refreshing…' : 'Refresh'}
+  </button>
+</div>
 
         <div className="stats-cards">
           <div className="stat-card">
@@ -543,7 +645,29 @@ if (docType === 'pds') {
                   </div>
                   <div className="job-details">
                     <span><img src={calendarminimalLogo} alt="document" className="calendar-blue-icon" /> Applied: {formatDate(app.applied_date)}</span>
-                    {displayScore !== null && displayScore !== undefined && (
+                                        {app.screening_status === 'PROCESSING' ? (
+                      <span style={{
+                        background: '#fff3e0',
+                        color: '#92400e',
+                        padding: '2px 10px',
+                        borderRadius: '12px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}>
+                        <span style={{
+                          width: '10px',
+                          height: '10px',
+                          border: '2px solid #fde68a',
+                          borderTopColor: '#d97706',
+                          borderRadius: '50%',
+                          animation: 'spin 1s linear infinite',
+                        }} />
+                        Screening…
+                      </span>
+                    ) : displayScore !== null && displayScore !== undefined && (
                       <span style={{ 
                         background: displayScore >= 80 ? '#e8f5e9' : displayScore >= 60 ? '#fff3e0' : '#ffebee',
                         color: displayScore >= 80 ? '#2e7d32' : displayScore >= 60 ? '#e65100' : '#c62828',
@@ -728,7 +852,7 @@ if (docType === 'pds') {
       )}
 
       {/* ✅ Re-assess Modal */}
-      {reassessApp && (
+        {reassessApp && !reassessSuccess && (
         <div
           className="modal-overlay"
           onClick={() => !reassessLoading && setReassessApp(null)}
@@ -835,27 +959,31 @@ if (docType === 'pds') {
                 Cancel
               </button>
               <button
-                onClick={() => handleReassess(reassessApp)}
-                disabled={reassessLoading || !reassessFile}
-                style={{
-                  padding: '10px 20px',
-                  background: reassessLoading ? '#4338CA' : '#4F46E5',
-                  color: 'white', border: 'none', borderRadius: '6px',
-                  fontWeight: 600,
-                  cursor: reassessLoading || !reassessFile ? 'not-allowed' : 'pointer',
-                  opacity: !reassessFile ? 0.5 : 1,
-                  display: 'flex', alignItems: 'center', gap: '6px'
-                }}
-              >
-                {reassessLoading ? (
-                  <>
-                    <span className="spinner" style={{ width: '14px', height: '14px' }} />
-                    Re-screening...
-                  </>
-                ) : (
-                  'Re-assess'
-                )}
-              </button>
+  onClick={() => handleReassess(reassessApp)}
+  disabled={reassessLoading || !reassessFile}
+  style={{
+    padding: '10px 20px',
+    background: reassessLoading ? '#4338CA' : '#4F46E5',
+    color: 'white', border: 'none', borderRadius: '6px',
+    fontWeight: 600,
+    cursor: reassessLoading || !reassessFile ? 'not-allowed' : 'pointer',
+    opacity: !reassessFile ? 0.5 : 1,
+    display: 'flex', alignItems: 'center', gap: '6px'
+  }}
+>
+  {reassessLoading ? (
+    <>
+      <span className="spinner" style={{ width: '14px', height: '14px' }} />
+      {reassessDocType === 'pds' ? 'Re-screening...' : 'Uploading...'}
+    </>
+  ) : (
+    reassessDocType === 'pds'
+      ? 'Re-assess'
+      : reassessApp?.docs_submitted?.[reassessDocType === 'transcript' ? 'transcript' : 'performanceRating']
+        ? 'Replace File'
+        : 'Upload File'
+  )}
+</button>
             </div>
           </div>
         </div>
@@ -1309,26 +1437,33 @@ if (docType === 'pds') {
             }}
           >
             {/* Success icon */}
-            <div style={{
+                        <div style={{
               width: 64, height: 64,
               borderRadius: '50%',
-              background: '#dcfce7',
-              color: '#16a34a',
+              background: reassessSuccess.inProgress ? '#fef3c7' : '#dcfce7',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               margin: '0 auto 16px',
               fontSize: 32,
               fontWeight: 700,
             }}>
-               <CheckIcon size={32} style={{ color: 'white' }} />
+              {reassessSuccess.inProgress && !reassessSuccess.isDocUpdate ? (
+                <span style={{ fontSize: 28 }}><BasiconsClockDownIcon size={30} color="#92400E" /></span>
+              ) : (
+                <CheckIcon size={32} style={{ color: 'white' }} />
+              )}
             </div>
 
-            <h3 style={{
+                        <h3 style={{
               margin: '0 0 6px',
               fontSize: '20px',
               fontWeight: 700,
               color: '#1a3a5c',
             }}>
-              Re-assessment Complete
+              {reassessSuccess.isDocUpdate
+                ? `${reassessSuccess.docType === 'transcript' ? 'Transcript' : 'Performance Rating'} Updated`
+                : reassessSuccess.inProgress
+                  ? 'Re-screening Started'
+                  : 'Re-assessment Complete'}
             </h3>
             <p style={{
               margin: '0 0 24px',
@@ -1336,51 +1471,75 @@ if (docType === 'pds') {
               color: '#64748b',
               lineHeight: 1.5,
             }}>
-              Your application has been re-screened with the new PDS.
+                          {reassessSuccess.isDocUpdate
+                ? reassessSuccess.docType === 'transcript'
+                  ? 'Your uploaded transcript has been replaced successfully.'
+                  : 'Your uploaded performance rating has been replaced successfully.'
+                : reassessSuccess.inProgress
+                  ? 'Your new PDS has been uploaded. Your application is being re-screened.'
+                  : 'Your application has been re-screened with the new PDS.'}
             </p>
 
-            {/* Score comparison */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '16px',
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              borderRadius: '12px',
-              padding: '20px 16px',
-              marginBottom: '20px',
-            }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600, marginBottom: '4px' }}>
-                  Previous
+                        {reassessSuccess.isDocUpdate ? null : reassessSuccess.inProgress ? (
+              <div style={{
+                background: '#fff3e0',
+                border: '1px solid #ffe0b2',
+                borderRadius: '12px',
+                padding: '20px 16px',
+                marginBottom: '20px',
+                textAlign: 'center',
+                fontSize: '13px',
+                color: '#92400e',
+                lineHeight: 1.5,
+              }}>
+                <strong style={{ display: 'block', marginBottom: '4px' }}>
+                  Screening in progress
+                </strong>
+                Your updated score will appear in this application card in about a minute.
+              </div>
+            ) : (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '16px',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '20px 16px',
+                marginBottom: '20px',
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600, marginBottom: '4px' }}>
+                    Previous
+                  </div>
+                  <div style={{ fontSize: '22px', fontWeight: 700, color: '#94a3b8', textDecoration: 'line-through' }}>
+                    {reassessSuccess.oldScore}%
+                  </div>
                 </div>
-                <div style={{ fontSize: '22px', fontWeight: 700, color: '#94a3b8', textDecoration: 'line-through' }}>
-                  {reassessSuccess.oldScore}%
+                <div style={{ color: '#cbd5e1', fontSize: '18px' }}>→</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '11px', color: '#4F46E5', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700, marginBottom: '4px' }}>
+                    New Score
+                  </div>
+                  <div style={{ fontSize: '28px', fontWeight: 800, color: '#4F46E5' }}>
+                    {reassessSuccess.newScore}%
+                  </div>
                 </div>
               </div>
+            )}
 
-              <div style={{ color: '#cbd5e1', fontSize: '18px' }}>→</div>
-
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '11px', color: '#4F46E5', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700, marginBottom: '4px' }}>
-                  New Score
-                </div>
-                <div style={{ fontSize: '28px', fontWeight: 800, color: '#4F46E5' }}>
-                  {reassessSuccess.newScore}%
-                </div>
-              </div>
-            </div>
-
-            <p style={{
-              margin: '0 0 24px',
-              fontSize: '12px',
-              color: '#94a3b8',
-              lineHeight: 1.5,
-            }}>
-              Previous score has been saved to your application history.
-              HR will see your updated assessment.
-            </p>
+                                    {!reassessSuccess.inProgress && !reassessSuccess.isDocUpdate && (
+              <p style={{
+                margin: '0 0 24px',
+                fontSize: '12px',
+                color: '#94a3b8',
+                lineHeight: 1.5,
+              }}>
+                Previous score has been saved to your application history.
+                HR will see your updated assessment.
+              </p>
+            )}
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: '10px' }}>
@@ -1408,6 +1567,7 @@ if (docType === 'pds') {
           </div>
         </div>
       )}
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </>
   );
 }

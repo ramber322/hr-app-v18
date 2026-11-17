@@ -167,7 +167,7 @@ useEffect(() => {
   // =========================
   // SCREEN PDS WITH PYTHON API
   // =========================
-  const screenPDSWithAPI = async (pdsFile, job) => {
+  const screenPDSWithAPI = async (pdsFile, job, applicationId = null) => {
     let educationValue = job.qualifications?.education || 3;
     let experienceValue = job.qualifications?.workExperience || 1;
     let trainingValue = job.qualifications?.training || 4;
@@ -194,14 +194,17 @@ useEffect(() => {
     const formData = new FormData();
     formData.append('file', pdsFile);
 
-    const params = new URLSearchParams({
+        const params = new URLSearchParams({
       position_title: job.position_title || "Position",
       job_category: detectJobCategory(job.position_title),
       education: educationValue,
       experience: experienceValue,
       training_hours: trainingValue,
-      eligibility_level: eligibilityValue
+      eligibility_level: eligibilityValue,
     });
+    if (applicationId) {
+      params.append('application_id', applicationId);
+    }
 
     console.log('📤 Sending to API:', {
       url: `${API_URL}/upload-pds?${params}`,
@@ -327,8 +330,6 @@ useEffect(() => {
   // HANDLE SUBMIT APPLICATION WITH API INTEGRATION
   // =========================
   // =========================
-// HANDLE SUBMIT APPLICATION WITH PROFILE DOCS
-// =========================
 const handleSubmitApplication = async () => {
   if (!applicant) {
     alert("Please login to apply");
@@ -336,304 +337,219 @@ const handleSubmitApplication = async () => {
   }
 
   setSubmitting(true);
-  setScreeningResult(null);
-  setShowResults(false);
 
   try {
-    // ═══════════════════════════════════════════════════════════
-    // STEP 1: Load profile documents  ← 🆕 NEW
-    // ═══════════════════════════════════════════════════════════
-    const { data: profileDocs, error: profileError } = await supabase
+    // ═══ FAST SYNC CHECK (only what MUST be validated before popup) ═══
+    const { data: profileDocs } = await supabase
       .from('applicants')
-      .select(`
-        pds_file_url,
-        tor_file_url,
-        performance_rating_file_url,
-        parsed_pds_raw,
-        has_pds,
-        has_transcript
-      `)
+      .select(`pds_file_url, tor_file_url, performance_rating_file_url`)
       .eq('id', applicant.id)
       .maybeSingle();
 
-    if (profileError) {
-      console.warn('Could not load profile docs:', profileError);
-    }
-
-    // ═══════════════════════════════════════════════════════════
-// STEP 2: Validate required docs exist in PROFILE OR FORM
-// ═══════════════════════════════════════════════════════════
-const requiredDocs = selectedJob.required_docs || {};
-const missingDocs = [];
-
-// PDS can come from profile OR from the form upload
-const hasPds =
-  !!profileDocs?.pds_file_url ||
-  !!application.documents?.pds;
-
-if (!hasPds) {
-  missingDocs.push('Personal Data Sheet (PDS)');
-}
-
-if (missingDocs.length > 0) {
-  const confirmed = window.confirm(
-    `This job requires the following documents that are missing from your profile:\n\n` +
-    `${missingDocs.map(d => '• ' + d).join('\n')}\n\n` +
-    `Would you like to go to your Profile page to upload them?`
-  );
-  if (confirmed) {
-    setShowJobDetailsModal(false);
-    navigate('/applicant/profile');
-  }
-  setSubmitting(false);
-  return;
-}
-
-    // ═══════════════════════════════════════════════════════════
-    // STEP 3: Check if already applied (unchanged)
-    // ═══════════════════════════════════════════════════════════
-    const { data: existingApp, error: checkError } = await supabase
-      .from('applications')
-      .select('id, status')
-      .eq('job_id', selectedJob.id)
-      .eq('applicant_id', applicant.id)
-      .maybeSingle();
-
-    if (checkError) {
-      console.error('Error checking existing application:', checkError);
-      alert('Error checking application status. Please try again.');
-      setSubmitting(false);
-      return;
-    }
-
-    if (existingApp && existingApp.status !== 'WITHDRAWN') {
-      alert('You have already applied for this position.');
-      setSubmitting(false);
-      return;
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // STEP 4: Fetch PDS from profile URL  ← 🆕 NEW
-    // ═══════════════════════════════════════════════════════════
-   // ═══════════════════════════════════════════════════════════
-// STEP 4: Fetch PDS for screening
-// ═══════════════════════════════════════════════════════════
-let pdsBlob;
-
-if (application.documents.pds) {
-  // User uploaded a different PDS for this job — use it
-  pdsBlob = application.documents.pds;
-} else {
-  // Use profile PDS
-  try {
-    const pdsResponse = await fetch(profileDocs.pds_file_url);
-    if (!pdsResponse.ok) throw new Error('Could not fetch PDS from profile');
-    const blob = await pdsResponse.blob();
-    
-    const urlParts = profileDocs.pds_file_url.split('/');
-    const lastPart = urlParts[urlParts.length - 1];
-    const ext = lastPart.split('.').pop();
-    pdsBlob = new File([blob], `pds.${ext}`, { type: blob.type });
-  } catch (fetchError) {
-    console.error('Error fetching PDS:', fetchError);
-    alert('Could not load your PDS from profile. Please re-upload it.');
-    setSubmitting(false);
-    return;
-  }
-}
-
-    // ═══════════════════════════════════════════════════════════
-    // STEP 5: Screen with Python API (same as before)
-    // ═══════════════════════════════════════════════════════════
-    let screeningResult;
-    try {
-      screeningResult = await screenPDSWithAPI(pdsBlob, selectedJob);
-    } catch (apiError) {
-      alert('Error screening PDS: ' + apiError.message);
-      setSubmitting(false);
-      return;
-    }
-
-    if (!screeningResult.success) {
-      alert('Error screening PDS: ' + (screeningResult.error || 'Unknown error'));
-      setSubmitting(false);
-      return;
-    }
-
-    setScreeningResult(screeningResult);
-
-    // ═══════════════════════════════════════════════════════════
-    // STEP 6: Get or create applicant (unchanged)
-    // ═══════════════════════════════════════════════════════════
-    const applicantRecord = await getOrCreateApplicant(applicant);
-
-    // ═══════════════════════════════════════════════════════════
-    // STEP 7: Build doc references from PROFILE URLs   CHANGED
-    // ═══════════════════════════════════════════════════════════
-    // No more per-job uploads — use profile URLs directly
-   // ═══════════════════════════════════════════════════════════
-const docFileNames = {};
-
-if (application.documents.pds) {
-  const result = await uploadFile(application.documents.pds, `${selectedJob.id}/${applicant.id}`, 'pds');
-  docFileNames.pds = result.fileName;
-} else if (profileDocs.pds_file_url) {
-  try {
-    const res = await fetch(profileDocs.pds_file_url);
-    const blob = await res.blob();
-    const ext = profileDocs.pds_file_url.split('.').pop().split('?')[0];
-    const file = new File([blob], `pds.${ext}`, { type: blob.type });
-    const result = await uploadFile(file, `${selectedJob.id}/${applicant.id}`, 'pds');
-    docFileNames.pds = result.fileName;
-  } catch (err) {
-    console.error('Failed to copy PDS from profile:', err);
-    docFileNames.pds = profileDocs.pds_file_url;
-  }
-}
-
-// TOR — use uploaded if provided, else COPY from profile
-if (application.documents.transcript) {
-  const result = await uploadFile(application.documents.transcript, `${selectedJob.id}/${applicant.id}`, 'transcript');
-  docFileNames.transcript = result.fileName;
-} else if (profileDocs.tor_file_url) {
-  // ✅ Download from profile folder, re-upload to application folder
-  try {
-    const res = await fetch(profileDocs.tor_file_url);
-    if (!res.ok) throw new Error('Could not fetch profile transcript');
-    const blob = await res.blob();
-    const ext = profileDocs.tor_file_url.split('.').pop().split('?')[0];
-    const file = new File([blob], `transcript.${ext}`, { type: blob.type });
-    const result = await uploadFile(file, `${selectedJob.id}/${applicant.id}`, 'transcript');
-    docFileNames.transcript = result.fileName;
-  } catch (err) {
-    console.error('Failed to copy transcript from profile:', err);
-    docFileNames.transcript = profileDocs.tor_file_url;   // fallback to URL
-  }
-}
-
-// Performance Rating — use uploaded if provided, else COPY from profile
-if (application.documents.performanceRating) {
-  const result = await uploadFile(application.documents.performanceRating, `${selectedJob.id}/${applicant.id}`, 'performanceRating');
-  docFileNames.performanceRating = result.fileName;
-} else if (profileDocs.performance_rating_file_url) {
-  try {
-    const res = await fetch(profileDocs.performance_rating_file_url);
-    if (!res.ok) throw new Error('Could not fetch profile PR');
-    const blob = await res.blob();
-    const ext = profileDocs.performance_rating_file_url.split('.').pop().split('?')[0];
-    const file = new File([blob], `performanceRating.${ext}`, { type: blob.type });
-    const result = await uploadFile(file, `${selectedJob.id}/${applicant.id}`, 'performanceRating');
-    docFileNames.performanceRating = result.fileName;
-  } catch (err) {
-    console.error('Failed to copy PR from profile:', err);
-    docFileNames.performanceRating = profileDocs.performance_rating_file_url;
-  }
-}
-
-const docsSubmitted = {
-  pds: true,
-  transcript: !!(application.documents.transcript || profileDocs.tor_file_url),
-  performanceRating: !!(application.documents.performanceRating || profileDocs.performance_rating_file_url),
-};
-
-       // ═══════════════════════════════════════════════════════════
-    // STEP 8: Create or update application
-    // ═══════════════════════════════════════════════════════════
-    
-    const rawScore = screeningResult.fit_analysis?.percentage || 0;
-    // fit score cap between 3.20 and 3.40
-    const penalty = 3.2 + (Math.random() * 0.2); 
-    const adjustedScore = Math.max(0, Number((rawScore - penalty).toFixed(2)));
-
-    const applicationData = {
-      status: 'PENDING',
-      docs_submitted: docsSubmitted,
-      doc_filenames: docFileNames,
-      applied_date: new Date().toISOString(),
-      
-      // ✅ Saves the adjusted score to the database
-      ai_match_score: adjustedScore, 
-      
-      ai_explanation: {
-        verdict: screeningResult.fit_analysis?.verdict || 'NOT FIT',
-        breakdown: screeningResult.fit_analysis?.breakdown || {},
-        requirements_met: screeningResult.fit_analysis?.requirements_met || '0/0',
-        
-        // ✅ Saves the adjusted score to the JSON block
-        score: adjustedScore, 
-        
-        binary_percentage: screeningResult.fit_analysis?.binary_percentage || 0,
-        summary: screeningResult.explanation?.summary || '',
-        feature_breakdown: screeningResult.explanation?.feature_breakdown || [],
-        recommendations: screeningResult.explanation?.recommendations || [],
-        verdict_description: screeningResult.explanation?.verdict_description || ''
+    const hasPds = !!profileDocs?.pds_file_url || !!application.documents?.pds;
+    if (!hasPds) {
+      const confirmed = window.confirm(
+        `You need a Personal Data Sheet (PDS) to apply. Go to your Profile to upload one?`
+      );
+      if (confirmed) {
+        setShowJobDetailsModal(false);
+        navigate('/applicant/profile');
       }
-    };
-
-    if (existingApp && existingApp.status === 'WITHDRAWN') {
-      // Re-activate withdrawn application
-      const { error: updateError } = await supabase
-        .from('applications')
-        .update({ ...applicationData, updated_at: new Date().toISOString() })
-        .eq('id', existingApp.id);
-
-      if (updateError) throw updateError;
-    } else {
-      // Create new application
-      const { error: appError } = await supabase
-        .from('applications')
-        .insert([{
-          job_id: selectedJob.id,
-          applicant_id: applicantRecord.id,
-          ...applicationData
-        }]);
-
-      if (appError) throw appError;
+      setSubmitting(false);
+      return;
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // STEP 9: Update applicants count
-    // ═══════════════════════════════════════════════════════════
-    const { data: currentJob } = await supabase
-      .from('job_postings')
-      .select('applicants_count')
-      .eq('id', selectedJob.id)
-      .single();
-
-    const newCount = (currentJob?.applicants_count || 0) + 1;
-    await supabase
-      .from('job_postings')
-      .update({ applicants_count: newCount })
-      .eq('id', selectedJob.id);
-
-    await loadAppliedJobs(applicant.id);
-
-    // ═══════════════════════════════════════════════════════════
-    // STEP 10: Show success
-    // ═══════════════════════════════════════════════════════════
-     const score = adjustedScore;
-    const requirementsMet = screeningResult.fit_analysis?.requirements_met || '0/0';
-
-    setSuccessData({
-  positionTitle: selectedJob.position_title,
-  score: score,
-  requirementsMet: requirementsMet,
-  manualReview: screeningResult.requires_manual_review === true,
-  lowConfidenceFields: screeningResult.low_confidence_fields || [],
-  extractionNote: screeningResult.extraction_note || null,
-  sourceFormat: screeningResult.source_format || 'excel',
-});
+    // ═══ POPUP APPEARS NOW — ~400ms after click ═══
+    setSuccessData({ positionTitle: selectedJob.position_title });
     setShowSuccessPopup(true);
-
     setShowJobDetailsModal(false);
     setScreeningResult(null);
     setShowResults(false);
+    setSubmitting(false);
+
+    // ═══ BACKGROUND WORK — user never sees this ═══
+    processApplicationInBackground(selectedJob, applicant, application, profileDocs);
 
   } catch (error) {
     console.error("Error submitting application:", error);
     alert("Error submitting application: " + error.message);
-  } finally {
     setSubmitting(false);
+  }
+};
+
+const processApplicationInBackground = async (job, user, application, profileDocs) => {
+  try {
+    console.log('🚀 Background processing started');
+
+    // Check already applied
+    const { data: existingApp, error: checkError } = await supabase
+      .from('applications')
+      .select('id, status')
+      .eq('job_id', job.id)
+      .eq('applicant_id', user.id)
+      .maybeSingle();
+
+    if (checkError) throw checkError;
+
+    if (existingApp && existingApp.status !== 'WITHDRAWN') {
+      console.warn('Already applied — aborting');
+      return;
+    }
+
+    // Resolve PDS file
+    let pdsBlob;
+    if (application.documents.pds) {
+      pdsBlob = application.documents.pds;
+    } else {
+      const pdsResponse = await fetch(profileDocs.pds_file_url);
+      const blob = await pdsResponse.blob();
+      const ext = profileDocs.pds_file_url.split('.').pop().split('?')[0];
+      pdsBlob = new File([blob], `pds.${ext}`, { type: blob.type });
+    }
+
+    // Get or create applicant
+    const applicantRecord = await getOrCreateApplicant(user);
+
+    // Upload docs in parallel
+    const docFileNames = {};
+    const pdsUploadPromise = (async () => {
+      if (application.documents.pds) {
+        const r = await uploadFile(application.documents.pds, `${job.id}/${user.id}`, 'pds');
+        return r.fileName;
+      } else if (profileDocs.pds_file_url) {
+        try {
+          const res = await fetch(profileDocs.pds_file_url);
+          const blob = await res.blob();
+          const ext = profileDocs.pds_file_url.split('.').pop().split('?')[0];
+          const file = new File([blob], `pds.${ext}`, { type: blob.type });
+          const r = await uploadFile(file, `${job.id}/${user.id}`, 'pds');
+          return r.fileName;
+        } catch { return profileDocs.pds_file_url; }
+      }
+      return null;
+    })();
+
+    const transcriptUploadPromise = (async () => {
+      if (application.documents.transcript) {
+        const r = await uploadFile(application.documents.transcript, `${job.id}/${user.id}`, 'transcript');
+        return r.fileName;
+      } else if (profileDocs.tor_file_url) {
+        try {
+          const res = await fetch(profileDocs.tor_file_url);
+          const blob = await res.blob();
+          const ext = profileDocs.tor_file_url.split('.').pop().split('?')[0];
+          const file = new File([blob], `transcript.${ext}`, { type: blob.type });
+          const r = await uploadFile(file, `${job.id}/${user.id}`, 'transcript');
+          return r.fileName;
+        } catch { return profileDocs.tor_file_url; }
+      }
+      return null;
+    })();
+
+    const prUploadPromise = (async () => {
+      if (application.documents.performanceRating) {
+        const r = await uploadFile(application.documents.performanceRating, `${job.id}/${user.id}`, 'performanceRating');
+        return r.fileName;
+      } else if (profileDocs.performance_rating_file_url) {
+        try {
+          const res = await fetch(profileDocs.performance_rating_file_url);
+          const blob = await res.blob();
+          const ext = profileDocs.performance_rating_file_url.split('.').pop().split('?')[0];
+          const file = new File([blob], `performanceRating.${ext}`, { type: blob.type });
+          const r = await uploadFile(file, `${job.id}/${user.id}`, 'performanceRating');
+          return r.fileName;
+        } catch { return profileDocs.performance_rating_file_url; }
+      }
+      return null;
+    })();
+
+    const [pdsName, transcriptName, prName] = await Promise.all([
+      pdsUploadPromise, transcriptUploadPromise, prUploadPromise,
+    ]);
+    if (pdsName) docFileNames.pds = pdsName;
+    if (transcriptName) docFileNames.transcript = transcriptName;
+    if (prName) docFileNames.performanceRating = prName;
+
+    const docsSubmitted = {
+      pds: true,
+      transcript: !!(application.documents.transcript || profileDocs.tor_file_url),
+      performanceRating: !!(application.documents.performanceRating || profileDocs.performance_rating_file_url),
+    };
+
+    // Save application
+    const applicationData = {
+      status: 'PENDING',
+      screening_status: 'PROCESSING',
+      docs_submitted: docsSubmitted,
+      doc_filenames: docFileNames,
+      applied_date: new Date().toISOString(),
+      ai_match_score: null,
+      ai_explanation: null,
+    };
+
+    let savedAppId;
+    if (existingApp && existingApp.status === 'WITHDRAWN') {
+      const { data, error } = await supabase
+        .from('applications')
+        .update({ ...applicationData, updated_at: new Date().toISOString() })
+        .eq('id', existingApp.id)
+        .select('id')
+        .single();
+      if (error) throw error;
+      savedAppId = data.id;
+    } else {
+      const { data, error } = await supabase
+        .from('applications')
+        .insert([{ job_id: job.id, applicant_id: applicantRecord.id, ...applicationData }])
+        .select('id')
+        .single();
+      if (error) throw error;
+      savedAppId = data.id;
+    }
+
+    // Update count + reload applied in parallel
+    await Promise.all([
+      (async () => {
+        const { data: currentJob } = await supabase
+          .from('job_postings')
+          .select('applicants_count')
+          .eq('id', job.id)
+          .single();
+        const newCount = (currentJob?.applicants_count || 0) + 1;
+        await supabase.from('job_postings').update({ applicants_count: newCount }).eq('id', job.id);
+      })(),
+      loadAppliedJobs(user.id),
+    ]);
+
+    console.log('✅ Background processing complete. savedAppId=' + savedAppId);
+
+    // Fire Python screening — fire and forget
+    screenInBackground(savedAppId, pdsBlob, job);
+
+  } catch (error) {
+    console.error('❌ Background processing failed:', error);
+    alert(`There was an issue saving your application: ${error.message}. Please try applying again.`);
+  }
+};
+
+const screenInBackground = async (applicationId, pdsBlob, job) => {
+  try {
+    const screeningResult = await screenPDSWithAPI(pdsBlob, job, applicationId);
+    // Python now writes the score to Supabase itself (screening_status='COMPLETED').
+    // This fetch just triggers the Python work — no client-side Supabase write needed.
+    console.log('✅ Background screening completed for application', applicationId);
+  } catch (err) {
+    console.error('❌ Background screening failed for application', applicationId, err);
+    // Python-side except already marks FAILED, but mark here as fallback
+    // if the request never reached Python (e.g. network error)
+    try {
+      await supabase
+        .from('applications')
+        .update({ screening_status: 'FAILED' })
+        .eq('id', applicationId);
+    } catch (e) {
+      console.error('Failed to mark application as FAILED:', e);
+    }
   }
 };
 
@@ -724,54 +640,184 @@ const docsSubmitted = {
   // =========================
   // SUCCESS POPUP
   // =========================
-  const SuccessPopup = () => {
-    if (!showSuccessPopup || !successData) return null;
-    
-    const { positionTitle, score, requirementsMet } = successData;
-    
-    return (
-      <div className="success-popup-overlay" onClick={() => setShowSuccessPopup(false)}>
-        <div className="success-popup" onClick={(e) => e.stopPropagation()}>
-          <div className="icon"  style={{
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    margin: '0 auto'
-  }}><ApplicantCheckboxIcon size={52} /> </div>
-          <h2>Application Submitted!</h2>
-          <p className="sub-text">
-            Your application for <strong>"{positionTitle}"</strong> has been submitted successfully.
-          </p>
-          
-          <div className="score-summary">
-            <div className="item">
-              <div className="value">{score}%</div>
-              <div className="label">AI Match Score</div>
-            </div>
-            <div className="item">
-              <div className="value">{requirementsMet}</div>
-              <div className="label">Requirements Met</div>
-            </div>
-          </div>
-          
-          <div className="popup-actions">
-            <button className="ok-btn" onClick={() => setShowSuccessPopup(false)}>
-              OK
-            </button>
-            <button 
-              className="view-btn" 
-              onClick={() => {
-                setShowSuccessPopup(false);
-                navigate('/applicant/applications');
-              }}   style={{ fontSize: '13px' }}
-            >
-               View My Applications
-            </button>
-          </div>
+
+const SuccessPopup = () => {
+  if (!showSuccessPopup || !successData) return null;
+
+  const { positionTitle } = successData;
+
+  return (
+    <div
+      className="success-popup-overlay"
+      onClick={() => setShowSuccessPopup(false)}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        background: 'rgba(15, 23, 42, 0.4)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+      }}
+    >
+      <div
+        className="success-popup"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: '400px',
+          background: '#FFFFFF',
+          borderRadius: '16px',
+          padding: '28px',
+          boxShadow: '0 12px 40px rgba(0,0,0,0.12)',
+          boxSizing: 'border-box',
+        }}
+      >
+
+        {/* Icon */}
+        <div style={{
+          width: '58px',
+          height: '58px',
+          margin: '0 auto 20px',
+          borderRadius: '16px',
+          background: '#EEF2FF',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <BasiconsDocumentIcon size={27} color="#4F46E5" />
         </div>
+
+        {/* Heading */}
+        <h2 style={{
+          margin: '0 0 10px',
+          fontSize: '21px',
+          fontWeight: 700,
+          color: '#1E293B',
+          textAlign: 'center',
+        }}>
+          Application Submitted!
+        </h2>
+
+        {/* Description */}
+        <p style={{
+          margin: '0 0 22px',
+          fontSize: '14px',
+          lineHeight: 1.6,
+          color: '#64748B',
+          textAlign: 'center',
+        }}>
+          Your application for{' '}
+          <strong style={{ color: '#334155' }}>"{positionTitle}"</strong>{' '}
+          has been received successfully.
+        </p>
+
+        {/* Processing Notice */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '13px',
+          marginBottom: '22px',
+          background: '#FFFBEB',
+          border: '1px solid #FDE68A',
+          borderRadius: '10px',
+        }}>
+          <p style={{
+            margin: 0,
+            fontSize: '12px',
+            color: '#92400E',
+            lineHeight: 1.5,
+          }}>
+            <strong>Processing.</strong>{' '}
+            Your match score will be available in My Applications shortly.
+          </p>
+        </div>
+
+        {/* Buttons */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '9px',
+        }}>
+         <button
+  className="primary-btn-popup"
+  onClick={() => {
+    setShowSuccessPopup(false);
+    navigate('/applicant/applications', {
+      state: { expectNewApplication: true },
+    });
+  }}
+  style={{
+    width: '100%',
+    padding: '12px',
+    border: 'none',
+    borderRadius: '8px',
+    background: '#4F46E5',
+    color: '#FFFFFF',
+    fontSize: '13px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    transition: 'background 0.2s ease',
+  }}
+>
+  View My Applications
+</button>
+
+         <button
+  className="secondary-btn-popup"
+  onClick={() => setShowSuccessPopup(false)}
+  style={{
+    width: '100%',
+    padding: '11px',
+    border: '1px solid #E2E8F0',
+    borderRadius: '8px',
+    background: '#e7edf3',
+    color: '#475569',
+    fontSize: '13px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    transition: 'background 0.2s ease, border-color 0.2s ease',
+  }}
+>
+  Close
+</button>
+        </div>
+
+        {/* Hover + focus states */}
+        <style>{`
+  .success-popup .primary-btn-popup:hover {
+    background: #4338CA !important;
+  }
+  .success-popup .primary-btn-popup:active {
+    background: #3730A3 !important;
+  }
+  .success-popup .primary-btn-popup:focus-visible {
+    outline: 2px solid #4F46E5;
+    outline-offset: 2px;
+  }
+  .success-popup .secondary-btn-popup:hover {
+    background: #E2E8F0 !important;
+    border-color: #CBD5E1 !important;
+    color: #334155 !important;
+  }
+  .success-popup .secondary-btn-popup:active {
+    background: #CBD5E1 !important;
+  }
+  .success-popup .secondary-btn-popup:focus-visible {
+    outline: 2px solid #94A3B8;
+    outline-offset: 2px;
+  }
+`}</style>
+
       </div>
-    );
-  };
+    </div>
+  );
+};
+
 
   const FileUploadField = ({ label, docType, jobRequires }) => {
     if (!jobRequires && docType !== 'pds') return null;

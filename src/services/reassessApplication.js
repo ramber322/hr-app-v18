@@ -21,7 +21,7 @@ const detectJobCategory = (positionTitle) => {
   return 'administrative';
 };
 
-const screenPDSWithAPI = async (pdsFile, job) => {
+const screenPDSWithAPI = async (pdsFile, job, applicationId = null) => {
   let educationValue = job.required_education ?? 0;
   let experienceValue = job.required_work_experience ?? 0;
   let trainingValue = job.required_training ?? 0;
@@ -47,6 +47,9 @@ const screenPDSWithAPI = async (pdsFile, job) => {
     training_hours: trainingValue,
     eligibility_level: eligibilityValue,
   });
+  if (applicationId) {
+    params.append('application_id', applicationId);
+  }
 
   const response = await fetch(`${API_URL}/upload-pds?${params}`, {
     method: 'POST',
@@ -64,7 +67,7 @@ const screenPDSWithAPI = async (pdsFile, job) => {
 /**
  * Re-upload any document for an application.
  * - docType: 'pds' | 'transcript' | 'performanceRating'
- * - Only 'pds' triggers re-screening (the score depends on PDS)
+ * - Only 'pds' triggers re-screening (background)
  */
 export async function reassessApplication({ application, newFile, docType = 'pds' }) {
   // 1. Load the job
@@ -76,16 +79,14 @@ export async function reassessApplication({ application, newFile, docType = 'pds
 
   if (jobError) throw new Error(`Could not load job: ${jobError.message}`);
 
-  // ✅ NEW: Delete the old file BEFORE uploading the new one
+  // 2. Delete old file
   const { data: existingFiles } = await supabase.storage
     .from('applicant_docs')
     .list(`${application.job_id}/${application.applicant_id}`);
 
   if (existingFiles && existingFiles.length > 0) {
     const type = docType.toLowerCase();
-    const oldFiles = existingFiles.filter(f =>
-      f.name.toLowerCase().startsWith(type)
-    );
+    const oldFiles = existingFiles.filter(f => f.name.toLowerCase().startsWith(type));
 
     if (oldFiles.length > 0) {
       const pathsToDelete = oldFiles.map(
@@ -97,12 +98,11 @@ export async function reassessApplication({ application, newFile, docType = 'pds
 
       if (deleteError) {
         console.warn('Could not delete old file:', deleteError);
-        // Continue anyway — the upload will succeed
       }
     }
   }
 
-  // 2. Upload file to storage
+  // 3. Upload new file
   const ext = newFile.name.split('.').pop();
   const prefix = docType;
   const filePath = `${application.job_id}/${application.applicant_id}/${prefix}-${Date.now()}.${ext}`;
@@ -117,7 +117,7 @@ export async function reassessApplication({ application, newFile, docType = 'pds
     .from('applicant_docs')
     .getPublicUrl(filePath);
 
-  // 3. Build the update object
+  // 4. Build update payload
   const docFilenames = {
     ...(application.doc_filenames || {}),
     [docType]: publicUrl,
@@ -134,41 +134,16 @@ export async function reassessApplication({ application, newFile, docType = 'pds
     updated_at: new Date().toISOString(),
   };
 
-  // 4. Only PDS changes trigger re-screening
-  let adjustedScore = application.ai_match_score;
-  let oldScore = application.ai_match_score;
+  const oldScore = application.ai_match_score;
 
+  // 5. PDS: mark PROCESSING (Python will write COMPLETED + score later)
   if (docType === 'pds') {
-    const screeningResult = await screenPDSWithAPI(newFile, job);
-    if (!screeningResult.success) {
-      throw new Error(screeningResult.error || 'Screening failed');
-    }
-
-    const rawScore = screeningResult.fit_analysis?.percentage || 0;
-    const penalty = 3.2 + Math.random() * 0.2;
-    adjustedScore = Math.max(0, Number((rawScore - penalty).toFixed(2)));
-
-    const previousScores = [
-      ...(application.ai_explanation?.previous_scores || []),
-      { score: application.ai_match_score, at: new Date().toISOString() },
-    ];
-
-    updatePayload.ai_match_score = adjustedScore;
-    updatePayload.ai_explanation = {
-      verdict: screeningResult.fit_analysis?.verdict || 'NOT FIT',
-      breakdown: screeningResult.fit_analysis?.breakdown || {},
-      requirements_met: screeningResult.fit_analysis?.requirements_met || '0/0',
-      score: adjustedScore,
-      binary_percentage: screeningResult.fit_analysis?.binary_percentage || 0,
-      summary: screeningResult.explanation?.summary || '',
-      feature_breakdown: screeningResult.explanation?.feature_breakdown || [],
-      recommendations: screeningResult.explanation?.recommendations || [],
-      verdict_description: screeningResult.explanation?.verdict_description || '',
-      previous_scores: previousScores,
-    };
+    updatePayload.screening_status = 'PROCESSING';
+    updatePayload.ai_match_score = null;
+    updatePayload.ai_explanation = null;
   }
 
-  // 5. Save to DB
+  // 6. Save to DB (fast — no Python wait)
   const { error: updateError } = await supabase
     .from('applications')
     .update(updatePayload)
@@ -176,7 +151,22 @@ export async function reassessApplication({ application, newFile, docType = 'pds
 
   if (updateError) throw new Error(`Update failed: ${updateError.message}`);
 
-  // 6. Log
+  // 7. Fire Python screening in background — DO NOT AWAIT
+  if (docType === 'pds') {
+    screenPDSWithAPI(newFile, job, application.id).catch(async (err) => {
+      console.error('❌ Background re-screening failed:', err);
+      try {
+        await supabase
+          .from('applications')
+          .update({ screening_status: 'FAILED' })
+          .eq('id', application.id);
+      } catch (e) {
+        console.error('Failed to mark FAILED:', e);
+      }
+    });
+  }
+
+  // 8. Log
   const docLabel = docType === 'pds' ? 'PDS'
     : docType === 'transcript' ? 'Transcript'
     : 'Performance Rating';
@@ -184,18 +174,19 @@ export async function reassessApplication({ application, newFile, docType = 'pds
   await logActivity(
     'status_update',
     docType === 'pds'
-      ? `Re-assessed PDS for "${job.position_title}" — score ${oldScore}% → ${adjustedScore}%`
+      ? `Re-assessing PDS for "${job.position_title}"`
       : `Re-uploaded ${docLabel} for "${job.position_title}"`,
     { job_id: application.job_id, metadata: { application_id: application.id, doc_type: docType } }
   );
 
-  // 7. Return
+  // 9. Return — newScore is null because screening is still in progress
   return {
     oldScore: docType === 'pds' ? oldScore : null,
-    newScore: docType === 'pds' ? adjustedScore : null,
+    newScore: null,
     jobTitle: job.position_title,
     docType,
     updatedFilenames: docFilenames,
     updatedSubmitted: docsSubmitted,
+    screeningInProgress: docType === 'pds',
   };
 }

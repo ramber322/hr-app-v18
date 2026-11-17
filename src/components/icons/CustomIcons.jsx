@@ -2163,3 +2163,17 @@ export function BasiconsInfoIcon({ size = 24, className = "", color = "currentCo
     </svg>
   );
 }
+
+export function BasiconsClockDownIcon({ size = 24, className = "", color = "currentColor", style = {} }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" className={className} style={{ color, flexShrink: 0, ...style }}>
+      <path
+        d="M12 7V12L15 15M22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C13.0452 22 14.053 21.8396 15 21.5422M17.5 18.5L20 21M20 21L22.5 18.5M20 21V15"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
