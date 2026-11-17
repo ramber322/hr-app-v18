@@ -636,7 +636,7 @@ export default function DashboardApplicant() {
                     {newJobs.slice(1, 5).map((job) => (
                       <div
                         key={job.id}
-                        onClick={() => navigate(`/applicant/jobs/${job.id}`)}
+                        onClick={() => navigate(`/applicant/jobs`)}
                         style={{
                           background: '#f8f9fc',
                           borderRadius: '10px',

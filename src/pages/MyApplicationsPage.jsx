@@ -442,10 +442,11 @@ export default function MyApplicationsPage() {
 
   const [reassessSuccess, setReassessSuccess] = useState(null);
   const handleReassess = async (app) => {
-  if (!reassessFile) {
+    if (!reassessFile) {
     const docLabel = reassessDocType === 'pds' ? 'PDS'
       : reassessDocType === 'transcript' ? 'Transcript'
-      : 'Performance Rating';
+      : reassessDocType === 'performanceRating' ? 'Performance Rating'
+      : 'Application Letter';
     setReassessError(`Please choose a new ${docLabel} file.`);
     return;
   }
@@ -703,6 +704,13 @@ export default function MyApplicationsPage() {
                             <span className="doc-missing">✗ Performance Rating</span>}
                         </span>
                       )}
+                                            {job?.required_docs?.applicationLetter && (
+                        <span className="doc-item">
+                          {getDocumentStatus(app.docs_submitted, 'applicationLetter') ? 
+                            <span className="doc-check">✓ Application Letter</span> : 
+                            <span className="doc-missing">✗ Application Letter</span>}
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -871,10 +879,11 @@ export default function MyApplicationsPage() {
               boxShadow: '0 20px 60px rgba(0,0,0,0.2)'
             }}
           >
-           <h3 style={{ margin: '0 0 6px', fontSize: '18px', color: '#1a3a5c' }}>
+                      <h3 style={{ margin: '0 0 6px', fontSize: '18px', color: '#1a3a5c' }}>
   {reassessDocType === 'pds' ? 'Re-assess PDS'
     : reassessDocType === 'transcript' ? 'Update Transcript of Records'
-    : 'Update Performance Rating'}
+    : reassessDocType === 'performanceRating' ? 'Update Performance Rating'
+    : 'Update Application Letter'}
 </h3>
 <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#64748b', lineHeight: 1.5 }}>
   {reassessDocType === 'pds'
@@ -924,11 +933,13 @@ export default function MyApplicationsPage() {
 ) : (
   <>
     <BasiconsFolderIcon size={16} color="#64748b" />
-    {reassessDocType === 'pds'
+        {reassessDocType === 'pds'
       ? 'Choose a new PDS'
       : reassessDocType === 'transcript'
       ? 'Choose a Transcript file'
-      : 'Choose a Performance Rating file'}
+      : reassessDocType === 'performanceRating'
+      ? 'Choose a Performance Rating file'
+      : 'Choose an Application Letter file'}
   </>
 )}
   <input
@@ -977,9 +988,9 @@ export default function MyApplicationsPage() {
       {reassessDocType === 'pds' ? 'Re-screening...' : 'Uploading...'}
     </>
   ) : (
-    reassessDocType === 'pds'
+        reassessDocType === 'pds'
       ? 'Re-assess'
-      : reassessApp?.docs_submitted?.[reassessDocType === 'transcript' ? 'transcript' : 'performanceRating']
+      : reassessApp?.docs_submitted?.[reassessDocType]
         ? 'Replace File'
         : 'Upload File'
   )}
@@ -1343,6 +1354,52 @@ export default function MyApplicationsPage() {
       </div>
     )}
 
+    {/* --- APPLICATION LETTER --- */}
+    {selectedApplication.job_postings?.required_docs?.applicationLetter && (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {selectedApplication.docs_submitted?.applicationLetter ? (
+            <span style={{ color: '#10b981', fontSize: '16px', fontWeight: 'bold' }}>✓</span>
+          ) : (
+            <span style={{ color: '#ef4444', fontSize: '16px', fontWeight: 'bold' }}>✕</span>
+          )}
+          <div>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a3a5c' }}>Application Letter</div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>Letter of intent addressed to the CHRMO</div>
+          </div>
+        </div>
+        
+        {['PENDING', 'REVIEWING'].includes(selectedApplication.status) && (
+          <button
+            onClick={() => {
+              setReassessApp(selectedApplication);
+              setReassessDocType('applicationLetter');
+              setReassessFile(null);
+              setReassessError('');
+            }}
+            style={{
+              padding: '6px 12px',
+              background: '#EEF2FF',
+              color: '#4F46E5',
+              border: '1px solid #c7d2fe',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'background 0.2s ease'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#e0e7ff'}
+            onMouseLeave={(e) => e.currentTarget.style.background = '#EEF2FF'}
+          >
+            {selectedApplication.docs_submitted?.applicationLetter ? 'Replace' : 'Upload'}
+          </button>
+        )}
+      </div>
+    )}
+
     {/* --- PERFORMANCE RATING --- */}
     {selectedApplication.job_postings?.required_docs?.performanceRating && (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
@@ -1459,9 +1516,10 @@ export default function MyApplicationsPage() {
               fontWeight: 700,
               color: '#1a3a5c',
             }}>
-              {reassessSuccess.isDocUpdate
-                ? `${reassessSuccess.docType === 'transcript' ? 'Transcript' : 'Performance Rating'} Updated`
+                            {reassessSuccess.isDocUpdate
+                ? `${reassessSuccess.docType === 'transcript' ? 'Transcript' : reassessSuccess.docType === 'performanceRating' ? 'Performance Rating' : 'Application Letter'} Updated`
                 : reassessSuccess.inProgress
+                
                   ? 'Re-screening Started'
                   : 'Re-assessment Complete'}
             </h3>
@@ -1472,9 +1530,11 @@ export default function MyApplicationsPage() {
               lineHeight: 1.5,
             }}>
                           {reassessSuccess.isDocUpdate
-                ? reassessSuccess.docType === 'transcript'
+                                ? reassessSuccess.docType === 'transcript'
                   ? 'Your uploaded transcript has been replaced successfully.'
-                  : 'Your uploaded performance rating has been replaced successfully.'
+                  : reassessSuccess.docType === 'performanceRating'
+                  ? 'Your uploaded performance rating has been replaced successfully.'
+                  : 'Your uploaded application letter has been replaced successfully.'
                 : reassessSuccess.inProgress
                   ? 'Your new PDS has been uploaded. Your application is being re-screened.'
                   : 'Your application has been re-screened with the new PDS.'}

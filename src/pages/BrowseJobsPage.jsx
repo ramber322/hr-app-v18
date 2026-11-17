@@ -1326,95 +1326,8 @@ const SuccessPopup = () => {
   )}
 </div>
 
-{/* ═══════════════════════════════════════════════ */}
-{/* Transcript of Records — optional */}
-{/* ═══════════════════════════════════════════════ */}
-{selectedJob.required_docs?.transcriptRecords && (
-  <div style={{
-    background: '#f8f9fc',
-    padding: '14px 16px',
-    borderRadius: '8px',
-    fontSize: '13px',
-    border: application.documents.transcript
-      ? '1px solid #c7d2fe'
-      : (applicantProfile?.tor_file_url ? '1px solid #d1fae5' : '1px solid #e5e7eb'),
-    marginBottom: '10px'
-  }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-      <span style={{ fontWeight: 600 }}> Transcript of Records</span>
-      {!application.documents.transcript && applicantProfile?.tor_file_url && (
-        <span style={{ color: '#0d9488', fontWeight: 600, fontSize: '12px' }}>
-          ✓ Using Profile (default)
-        </span>
-      )}
-    </div>
 
-    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-      <label
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '6px',
-          background: '#eef2ff',        /* ✅ White background */
-    color: '#475569',             /* ✅ Dark gray text */
-    border: '1px solid #CBD5E1',  /* ✅ Subtle gray border */
-          padding: '8px 14px',
-          borderRadius: '6px',
-          fontSize: '12px',
-          fontWeight: 600,
-          cursor: 'pointer',
-          transition: 'background 0.2s ease'
-        }}
-        onMouseEnter={(e) => e.currentTarget.style.background = '#e0e7ff'}
-        onMouseLeave={(e) => e.currentTarget.style.background = '#eef2ff'}
-      >
-        <BasiconsFolderIcon size={14} color="#383654" /> {application.documents.transcript
-          ? 'Replace file'
-          : (applicantProfile?.tor_file_url ? 'Upload different file' : 'Upload file')}
-        <input
-          type="file"
-          accept=".pdf,.jpg,.jpeg,.png"
-          style={{ display: 'none' }}
-          onChange={(e) => handleFileChange(e, 'transcript')}
-        />
-      </label>
-
-      {application.documents.transcript && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          background: '#eef2ff',
-          padding: '6px 10px',
-          borderRadius: '6px',
-          fontSize: '12px',
-          color: '#4F46E5',
-          maxWidth: '100%'
-        }}>
-          <span> {application.documents.transcript.name}</span>
-          <button
-            type="button"
-            onClick={() => handleRemoveFile('transcript')}
-            style={{
-              background: '#fee2e2',
-              color: '#dc2626',
-              border: 'none',
-              borderRadius: '4px',
-              padding: '2px 8px',
-              cursor: 'pointer',
-              fontSize: '11px',
-              fontWeight: 600
-            }}
-          >
-            ✕ Remove
-          </button>
-        </div>
-      )}
-    </div>
-  </div>
-)}
-
-  {/* ═══════════════════════════════════════════════ */}
+ {/* ═══════════════════════════════════════════════ */}
 {/* Application Letter — optional */}
 {/* ═══════════════════════════════════════════════ */}
 {selectedJob.required_docs?.applicationLetter && (
@@ -1506,6 +1419,96 @@ const SuccessPopup = () => {
   </div>
 )}
 
+
+{/* ═══════════════════════════════════════════════ */}
+{/* Transcript of Records — optional */}
+{/* ═══════════════════════════════════════════════ */}
+{selectedJob.required_docs?.transcriptRecords && (
+  <div style={{
+    background: '#f8f9fc',
+    padding: '14px 16px',
+    borderRadius: '8px',
+    fontSize: '13px',
+    border: application.documents.transcript
+      ? '1px solid #c7d2fe'
+      : (applicantProfile?.tor_file_url ? '1px solid #d1fae5' : '1px solid #e5e7eb'),
+    marginBottom: '10px'
+  }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+      <span style={{ fontWeight: 600 }}> Transcript of Records</span>
+      {!application.documents.transcript && applicantProfile?.tor_file_url && (
+        <span style={{ color: '#0d9488', fontWeight: 600, fontSize: '12px' }}>
+          ✓ Using Profile (default)
+        </span>
+      )}
+    </div>
+
+    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+      <label
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '6px',
+          background: '#eef2ff',        /* ✅ White background */
+    color: '#475569',             /* ✅ Dark gray text */
+    border: '1px solid #CBD5E1',  /* ✅ Subtle gray border */
+          padding: '8px 14px',
+          borderRadius: '6px',
+          fontSize: '12px',
+          fontWeight: 600,
+          cursor: 'pointer',
+          transition: 'background 0.2s ease'
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.background = '#e0e7ff'}
+        onMouseLeave={(e) => e.currentTarget.style.background = '#eef2ff'}
+      >
+        <BasiconsFolderIcon size={14} color="#383654" /> {application.documents.transcript
+          ? 'Replace file'
+          : (applicantProfile?.tor_file_url ? 'Upload different file' : 'Upload file')}
+        <input
+          type="file"
+          accept=".pdf,.jpg,.jpeg,.png"
+          style={{ display: 'none' }}
+          onChange={(e) => handleFileChange(e, 'transcript')}
+        />
+      </label>
+
+      {application.documents.transcript && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          background: '#eef2ff',
+          padding: '6px 10px',
+          borderRadius: '6px',
+          fontSize: '12px',
+          color: '#4F46E5',
+          maxWidth: '100%'
+        }}>
+          <span> {application.documents.transcript.name}</span>
+          <button
+            type="button"
+            onClick={() => handleRemoveFile('transcript')}
+            style={{
+              background: '#fee2e2',
+              color: '#dc2626',
+              border: 'none',
+              borderRadius: '4px',
+              padding: '2px 8px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontWeight: 600
+            }}
+          >
+            ✕ Remove
+          </button>
+        </div>
+      )}
+    </div>
+  </div>
+)}
+
+ 
 
 {/* ═══════════════════════════════════════════════ */}
 {/* Performance Rating — optional */}
