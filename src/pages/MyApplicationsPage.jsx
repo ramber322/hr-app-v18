@@ -10,6 +10,8 @@ import { CircularCheckSuccessIcon,BasiconsClockDownIcon, BasiconsDocumentIcon, B
 import Loader from '../components/Loader';
 
 export default function MyApplicationsPage() {
+const [uploadingDocTypes, setUploadingDocTypes] = useState(new Set());
+
   const [refreshing, setRefreshing] = useState(false);
 
   const handleRefresh = async () => {
@@ -504,7 +506,14 @@ export default function MyApplicationsPage() {
     processReassessmentInBackground({ app, file, docType });
   };
 
-  const processReassessmentInBackground = async ({ app, file, docType }) => {
+    const processReassessmentInBackground = async ({ app, file, docType }) => {
+    // Mark this doc as uploading (blocks its View button)
+    setUploadingDocTypes(prev => {
+      const next = new Set(prev);
+      next.add(docType);
+      return next;
+    });
+
     try {
       await reassessApplication({
         application: app,
@@ -532,6 +541,13 @@ export default function MyApplicationsPage() {
       console.error('Re-assessment error:', err);
       // Non-blocking alert — popup stays open, user sees clear error
       alert(`Upload failed: ${err.message}. Please try again.`);
+    } finally {
+      // Remove this docType — its View button is safe again
+      setUploadingDocTypes(prev => {
+        const next = new Set(prev);
+        next.delete(docType);
+        return next;
+      });
     }
   };
 
@@ -1313,24 +1329,39 @@ export default function MyApplicationsPage() {
       
       {/* Re-upload button for PDS */}
   <div style={{ display: 'flex', gap: '8px' }}>
-  {selectedApplication.docs_submitted?.pds && (
+    {selectedApplication.docs_submitted?.pds && (
     <button
       onClick={() => viewApplicantDocument(selectedApplication, 'pds', 'PDS')}
+      disabled={uploadingDocTypes.has('pds')}
       style={{
         padding: '6px 12px',
         background: 'white',
-        color: '#475569',
+        color: uploadingDocTypes.has('pds') ? '#94a3b8' : '#475569',
         border: '1px solid #CBD5E1',
         borderRadius: '6px',
         fontSize: '11px',
         fontWeight: 600,
-        cursor: 'pointer',
-        transition: 'background 0.2s ease'
+        cursor: uploadingDocTypes.has('pds') ? 'not-allowed' : 'pointer',
+        transition: 'background 0.2s ease',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        opacity: uploadingDocTypes.has('pds') ? 0.6 : 1
+        
       }}
-      onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+      onMouseEnter={(e) => {
+        if (!uploadingDocTypes.has('pds')) e.currentTarget.style.background = '#f1f5f9';
+      }}
       onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
     >
-      View
+      {uploadingDocTypes.has('pds') ? (
+        <>
+          <span className="spinner" style={{ width: '12px', height: '12px' }} />
+          Saving...
+        </>
+      ) : (
+        'View'
+      )}
     </button>
   )}
   {['PENDING', 'REVIEWING'].includes(selectedApplication.status) && (
@@ -1381,24 +1412,38 @@ export default function MyApplicationsPage() {
         
         {/* Placeholder for future Transcript re-upload */}
       <div style={{ display: 'flex', gap: '8px' }}>
-  {selectedApplication.docs_submitted?.transcript && (
+    {selectedApplication.docs_submitted?.transcript && (
     <button
       onClick={() => viewApplicantDocument(selectedApplication, 'transcript', 'Transcript')}
+      disabled={uploadingDocTypes.has('transcript')}
       style={{
         padding: '6px 12px',
         background: 'white',
-        color: '#475569',
+        color: uploadingDocTypes.has('transcript') ? '#94a3b8' : '#475569',
         border: '1px solid #CBD5E1',
         borderRadius: '6px',
         fontSize: '11px',
         fontWeight: 600,
-        cursor: 'pointer',
-        transition: 'background 0.2s ease'
+        cursor: uploadingDocTypes.has('transcript') ? 'not-allowed' : 'pointer',
+        transition: 'background 0.2s ease',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        opacity: uploadingDocTypes.has('transcript') ? 0.6 : 1
       }}
-      onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+      onMouseEnter={(e) => {
+        if (!uploadingDocTypes.has('transcript')) e.currentTarget.style.background = '#f1f5f9';
+      }}
       onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
     >
-      View
+      {uploadingDocTypes.has('transcript') ? (
+        <>
+          <span className="spinner" style={{ width: '12px', height: '12px' }} />
+          Saving...
+        </>
+      ) : (
+        'View'
+      )}
     </button>
   )}
   {['PENDING', 'REVIEWING'].includes(selectedApplication.status) && (
@@ -1449,24 +1494,38 @@ export default function MyApplicationsPage() {
         </div>
         
         <div style={{ display: 'flex', gap: '8px' }}>
-  {selectedApplication.docs_submitted?.applicationLetter && (
+    {selectedApplication.docs_submitted?.applicationLetter && (
     <button
       onClick={() => viewApplicantDocument(selectedApplication, 'applicationLetter', 'Application Letter')}
+      disabled={uploadingDocTypes.has('applicationLetter')}
       style={{
         padding: '6px 12px',
         background: 'white',
-        color: '#475569',
+        color: uploadingDocTypes.has('applicationLetter') ? '#94a3b8' : '#475569',
         border: '1px solid #CBD5E1',
         borderRadius: '6px',
         fontSize: '11px',
         fontWeight: 600,
-        cursor: 'pointer',
-        transition: 'background 0.2s ease'
+        cursor: uploadingDocTypes.has('applicationLetter') ? 'not-allowed' : 'pointer',
+        transition: 'background 0.2s ease',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        opacity: uploadingDocTypes.has('applicationLetter') ? 0.6 : 1
       }}
-      onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+      onMouseEnter={(e) => {
+        if (!uploadingDocTypes.has('applicationLetter')) e.currentTarget.style.background = '#f1f5f9';
+      }}
       onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
     >
-      View
+      {uploadingDocTypes.has('applicationLetter') ? (
+        <>
+          <span className="spinner" style={{ width: '12px', height: '12px' }} />
+          Saving...
+        </>
+      ) : (
+        'View'
+      )}
     </button>
   )}
   {['PENDING', 'REVIEWING'].includes(selectedApplication.status) && (
@@ -1518,24 +1577,38 @@ export default function MyApplicationsPage() {
         
         {/* Placeholder for future PR re-upload */}
      <div style={{ display: 'flex', gap: '8px' }}>
-  {selectedApplication.docs_submitted?.performanceRating && (
+    {selectedApplication.docs_submitted?.performanceRating && (
     <button
       onClick={() => viewApplicantDocument(selectedApplication, 'performanceRating', 'Performance Rating')}
+      disabled={uploadingDocTypes.has('performanceRating')}
       style={{
         padding: '6px 12px',
         background: 'white',
-        color: '#475569',
+        color: uploadingDocTypes.has('performanceRating') ? '#94a3b8' : '#475569',
         border: '1px solid #CBD5E1',
         borderRadius: '6px',
         fontSize: '11px',
         fontWeight: 600,
-        cursor: 'pointer',
-        transition: 'background 0.2s ease'
+        cursor: uploadingDocTypes.has('performanceRating') ? 'not-allowed' : 'pointer',
+        transition: 'background 0.2s ease',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        opacity: uploadingDocTypes.has('performanceRating') ? 0.6 : 1
       }}
-      onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+      onMouseEnter={(e) => {
+        if (!uploadingDocTypes.has('performanceRating')) e.currentTarget.style.background = '#f1f5f9';
+      }}
       onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
     >
-      View
+      {uploadingDocTypes.has('performanceRating') ? (
+        <>
+          <span className="spinner" style={{ width: '12px', height: '12px' }} />
+          Saving...
+        </>
+      ) : (
+        'View'
+      )}
     </button>
   )}
   {['PENDING', 'REVIEWING'].includes(selectedApplication.status) && (
