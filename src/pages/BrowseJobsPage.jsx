@@ -90,7 +90,7 @@ useEffect(() => {
       // Load profile docs
       const { data: profile } = await supabase
         .from('applicants')
-        .select('pds_file_url, tor_file_url, performance_rating_file_url, parsed_pds_raw')
+        .select('pds_file_url, tor_file_url, performance_rating_file_url, application_letter_file_url, parsed_pds_raw')
         .eq('id', user.id)
         .maybeSingle();
       
@@ -250,6 +250,8 @@ useEffect(() => {
     // Check each required document type
     if (requiredDocs.transcriptRecords) initialDocs.transcript = null;
     if (requiredDocs.performanceRating) initialDocs.performanceRating = null;
+    if (requiredDocs.applicationLetter) initialDocs.applicationLetter = null;
+
     
     setApplication({
       coverLetter: "",
@@ -342,7 +344,7 @@ const handleSubmitApplication = async () => {
     // ═══ FAST SYNC CHECK (only what MUST be validated before popup) ═══
     const { data: profileDocs } = await supabase
       .from('applicants')
-      .select(`pds_file_url, tor_file_url, performance_rating_file_url`)
+         .select(`pds_file_url, tor_file_url, performance_rating_file_url, application_letter_file_url`)
       .eq('id', applicant.id)
       .maybeSingle();
 
@@ -463,17 +465,36 @@ const processApplicationInBackground = async (job, user, application, profileDoc
       return null;
     })();
 
-    const [pdsName, transcriptName, prName] = await Promise.all([
-      pdsUploadPromise, transcriptUploadPromise, prUploadPromise,
+        const letterUploadPromise = (async () => {
+      if (application.documents.applicationLetter) {
+        const r = await uploadFile(application.documents.applicationLetter, `${job.id}/${user.id}`, 'applicationLetter');
+        return r.fileName;
+      } else if (profileDocs.application_letter_file_url) {
+        try {
+          const res = await fetch(profileDocs.application_letter_file_url);
+          const blob = await res.blob();
+          const ext = profileDocs.application_letter_file_url.split('.').pop().split('?')[0];
+          const file = new File([blob], `applicationLetter.${ext}`, { type: blob.type });
+          const r = await uploadFile(file, `${job.id}/${user.id}`, 'applicationLetter');
+          return r.fileName;
+        } catch { return profileDocs.application_letter_file_url; }
+      }
+      return null;
+    })();
+
+    const [pdsName, transcriptName, prName, letterName] = await Promise.all([
+      pdsUploadPromise, transcriptUploadPromise, prUploadPromise, letterUploadPromise,
     ]);
     if (pdsName) docFileNames.pds = pdsName;
     if (transcriptName) docFileNames.transcript = transcriptName;
     if (prName) docFileNames.performanceRating = prName;
+    if (letterName) docFileNames.applicationLetter = letterName;
 
-    const docsSubmitted = {
+        const docsSubmitted = {
       pds: true,
       transcript: !!(application.documents.transcript || profileDocs.tor_file_url),
       performanceRating: !!(application.documents.performanceRating || profileDocs.performance_rating_file_url),
+      applicationLetter: !!(application.documents.applicationLetter || profileDocs.application_letter_file_url),
     };
 
     // Save application
@@ -1079,6 +1100,14 @@ const SuccessPopup = () => {
       <span style={{ color: '#10b981', fontSize: '14px' }}>✓</span> 
       Personal Data Sheet (PDS)
     </li>
+
+        {selectedJob.required_docs?.applicationLetter && (
+      <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span style={{ color: '#10b981', fontSize: '14px' }}>✓</span> 
+        Application Letter
+      </li>
+    )}
+
     {selectedJob.required_docs?.transcriptRecords && (
       <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <span style={{ color: '#10b981', fontSize: '14px' }}>✓</span> 
@@ -1297,7 +1326,7 @@ const SuccessPopup = () => {
   )}
 </div>
 
- {/* ═══════════════════════════════════════════════ */}
+{/* ═══════════════════════════════════════════════ */}
 {/* Transcript of Records — optional */}
 {/* ═══════════════════════════════════════════════ */}
 {selectedJob.required_docs?.transcriptRecords && (
@@ -1386,6 +1415,99 @@ const SuccessPopup = () => {
 )}
 
   {/* ═══════════════════════════════════════════════ */}
+{/* Application Letter — optional */}
+{/* ═══════════════════════════════════════════════ */}
+{selectedJob.required_docs?.applicationLetter && (
+  <div style={{
+    background: '#f8f9fc',
+    padding: '14px 16px',
+    borderRadius: '8px',
+    fontSize: '13px',
+    border: application.documents.applicationLetter
+      ? '1px solid #c7d2fe'
+      : (applicantProfile?.application_letter_file_url ? '1px solid #d1fae5' : '1px solid #e5e7eb'),
+    marginBottom: '10px'
+  }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+      <span style={{ fontWeight: 600 }}> Application Letter</span>
+      {!application.documents.applicationLetter && applicantProfile?.application_letter_file_url && (
+        <span style={{ color: '#0d9488', fontWeight: 600, fontSize: '12px' }}>
+          ✓ Using Profile (default)
+        </span>
+      )}
+    </div>
+
+    <div style={{ fontSize: '11px', color: '#6c757d', marginBottom: '10px' }}>
+      Letter of intent addressed to the CHRMO
+    </div>
+
+    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+      <label
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '6px',
+          background: '#eef2ff',
+          color: '#475569',
+          border: '1px solid #CBD5E1',
+          padding: '8px 14px',
+          borderRadius: '6px',
+          fontSize: '12px',
+          fontWeight: 600,
+          cursor: 'pointer',
+          transition: 'background 0.2s ease'
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.background = '#e0e7ff'}
+        onMouseLeave={(e) => e.currentTarget.style.background = '#eef2ff'}
+      >
+        <BasiconsFolderIcon size={14} color="#383654" /> {application.documents.applicationLetter
+          ? 'Replace file'
+          : (applicantProfile?.application_letter_file_url ? 'Upload different file' : 'Upload file')}
+        <input
+          type="file"
+          accept=".pdf,.jpg,.jpeg,.png,.docx"
+          style={{ display: 'none' }}
+          onChange={(e) => handleFileChange(e, 'applicationLetter')}
+        />
+      </label>
+
+      {application.documents.applicationLetter && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          background: '#eef2ff',
+          padding: '6px 10px',
+          borderRadius: '6px',
+          fontSize: '12px',
+          color: '#4F46E5',
+          maxWidth: '100%'
+        }}>
+          <span> {application.documents.applicationLetter.name}</span>
+          <button
+            type="button"
+            onClick={() => handleRemoveFile('applicationLetter')}
+            style={{
+              background: '#fee2e2',
+              color: '#dc2626',
+              border: 'none',
+              borderRadius: '4px',
+              padding: '2px 8px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontWeight: 600
+            }}
+          >
+            ✕ Remove
+          </button>
+        </div>
+      )}
+    </div>
+  </div>
+)}
+
+
+{/* ═══════════════════════════════════════════════ */}
 {/* Performance Rating — optional */}
 {/* ═══════════════════════════════════════════════ */}
 {selectedJob.required_docs?.performanceRating && (

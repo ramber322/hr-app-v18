@@ -333,7 +333,7 @@ const [bulkUpdateSuccessMessage, setBulkUpdateSuccessMessage] = useState(null);
         const appId = app.id;
         docUrls[appId] = {};
         
-        const docTypes = ['pds', 'transcript', 'performanceRating'];
+        const docTypes = ['pds', 'transcript', 'performanceRating', 'applicationLetter'];
         for (const docType of docTypes) {
           if (app.docs_submitted?.[docType]) {
             const url = await getDocumentUrl(app.job_id, app.applicant_id, docType);
@@ -545,7 +545,7 @@ const [bulkUpdateSuccessMessage, setBulkUpdateSuccessMessage] = useState(null);
     });
   };
 
-  const checkDocumentsComplete = (docs, jobRequiredDocs) => {
+      const checkDocumentsComplete = (docs, jobRequiredDocs) => {
     if (!docs) return false;
     
     let allComplete = docs.pds === true;
@@ -556,6 +556,10 @@ const [bulkUpdateSuccessMessage, setBulkUpdateSuccessMessage] = useState(null);
     
     if (jobRequiredDocs?.performanceRating) {
       allComplete = allComplete && docs.performanceRating === true;
+    }
+
+    if (jobRequiredDocs?.applicationLetter) {
+      allComplete = allComplete && docs.applicationLetter === true;
     }
     
     return allComplete;
@@ -2075,6 +2079,34 @@ border: `1px solid ${isFit ? '#bbf7d0' : '#fde68a'}`
                 )}
               </li>
             )}
+
+
+            {/* Application Letter */}
+            {job?.required_docs?.applicationLetter && (
+              <li style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #e8ebf5' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: '#1a1f36' }}>
+                  <span style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '22px',
+                    height: '22px',
+                    flexShrink: 0,
+                  }}>
+                    {selectedApplication.docs_submitted?.applicationLetter ? (
+                      <DocumentCheckIcon size={22} color="#10b981" />
+                    ) : (
+                      <span style={{ color: '#ef4444', fontSize: '14px', fontWeight: 'bold' }}>✕</span>
+                    )}
+                  </span>
+                  Application Letter
+                </span>
+                {selectedApplication.docs_submitted?.applicationLetter && (
+                  <JobCandidateButton onClick={() => viewDocument(selectedApplication.job_id, selectedApplication.applicant_id, 'applicationLetter', 'Application Letter')} />
+                )}
+              </li>
+            )}
+            
 
             {/* Performance Rating */}
             {job?.required_docs?.performanceRating && (

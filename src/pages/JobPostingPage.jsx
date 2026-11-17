@@ -349,6 +349,7 @@ const [showEditConfirm, setShowEditConfirm] = useState(false);
     instructions: "",
     requiredDocs: {
       pds: true,
+      applicationLetter: false, 
       transcriptRecords: false,
       performanceRating: false
     }
@@ -903,6 +904,7 @@ useEffect(() => {
   }}>
     {[
       { key: 'pds', label: 'Personal Data Sheet (PDS)', sublabel: 'Primary document for screening', required: true },
+      { key: 'applicationLetter', label: 'Application Letter', sublabel: 'Letter of intent addressed to the CHRMO' },
       { key: 'transcriptRecords', label: 'Transcript of Records', sublabel: 'Proof of educational attainment' },
       { key: 'performanceRating', label: 'Performance Rating', sublabel: 'Most recent performance evaluation' },
     ].map((doc) => (
@@ -1591,6 +1593,49 @@ useEffect(() => {
   </div>
 )}
 
+
+        {/* ── REQUIRED DOCUMENTS ── */}
+        <div style={{
+          background: '#f8fafc',
+          border: '1px solid #e8ebf5',
+          borderRadius: '12px',
+          padding: '18px 20px',
+          marginBottom: '16px'
+        }}>
+          <h4 style={{
+            fontSize: '12px',
+            fontWeight: 700,
+            color: '#1a3a5c',
+            letterSpacing: '0.8px',
+            textTransform: 'uppercase',
+            margin: '0 0 14px 0',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <span style={{ color: '#f59e0b' }}>■</span> Required Documents
+          </h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px', color: '#1a1f36' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#10b981' }}>✓</span> Personal Data Sheet (PDS)
+            </div>
+            {showDetails.required_docs?.applicationLetter && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: '#10b981' }}>✓</span> Application Letter
+              </div>
+            )}
+            {showDetails.required_docs?.transcriptRecords && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: '#10b981' }}>✓</span> Transcript of Records
+              </div>
+            )}
+            {showDetails.required_docs?.performanceRating && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: '#10b981' }}>✓</span> Performance Rating
+              </div>
+            )}
+          </div>
+        </div>
 
 
         {/* ── INSTRUCTIONS ── */}
