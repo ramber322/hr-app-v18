@@ -193,6 +193,30 @@ export default function MyApplicationsPage() {
     return docsSubmitted[docType] === true;
   };
 
+    const viewApplicantDocument = (app, docType, docLabel) => {
+    const storedValue = app.doc_filenames?.[docType];
+    if (!storedValue) {
+      alert(`No ${docLabel} file found on this application.`);
+      return;
+    }
+
+    if (typeof storedValue === 'string' && storedValue.startsWith('http')) {
+      window.open(storedValue, '_blank');
+      return;
+    }
+
+    const filePath = `${app.job_id}/${app.applicant_id}/${storedValue}`;
+    const { data: urlData } = supabase.storage
+      .from('applicant_docs')
+      .getPublicUrl(filePath);
+
+    if (urlData?.publicUrl) {
+      window.open(urlData.publicUrl, '_blank');
+    } else {
+      alert(`Could not open ${docLabel} file.`);
+    }
+  };
+
   const canWithdraw = (application) => {
     if (application.status === 'WITHDRAWN') return false;
     const withdrawableStatuses = ['PENDING', 'REVIEWING'];
@@ -1288,35 +1312,56 @@ export default function MyApplicationsPage() {
       </div>
       
       {/* Re-upload button for PDS */}
-     {/* Re-upload button for PDS */}
-{['PENDING', 'REVIEWING'].includes(selectedApplication.status) && (
-  <button
-    onClick={() => {
-      setReassessApp(selectedApplication);
-      setReassessDocType('pds');      // ✅ identifies this as PDS re-assess
-      setReassessFile(null);
-      setReassessError('');
-    }}
-    style={{
-      padding: '6px 12px',
-      background: '#EEF2FF',
-      color: '#4F46E5',
-      border: '1px solid #c7d2fe',
-      borderRadius: '6px',
-      fontSize: '11px',
-      fontWeight: 600,
-      cursor: 'pointer',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '4px',
-      transition: 'background 0.2s ease'
-    }}
-    onMouseEnter={(e) => e.currentTarget.style.background = '#e0e7ff'}
-    onMouseLeave={(e) => e.currentTarget.style.background = '#EEF2FF'}
-  >
-    Upload New
-  </button>
-)}
+  <div style={{ display: 'flex', gap: '8px' }}>
+  {selectedApplication.docs_submitted?.pds && (
+    <button
+      onClick={() => viewApplicantDocument(selectedApplication, 'pds', 'PDS')}
+      style={{
+        padding: '6px 12px',
+        background: 'white',
+        color: '#475569',
+        border: '1px solid #CBD5E1',
+        borderRadius: '6px',
+        fontSize: '11px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        transition: 'background 0.2s ease'
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+      onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+    >
+      View
+    </button>
+  )}
+  {['PENDING', 'REVIEWING'].includes(selectedApplication.status) && (
+    <button
+      onClick={() => {
+        setReassessApp(selectedApplication);
+        setReassessDocType('pds');
+        setReassessFile(null);
+        setReassessError('');
+      }}
+      style={{
+        padding: '6px 12px',
+        background: '#EEF2FF',
+        color: '#4F46E5',
+        border: '1px solid #c7d2fe',
+        borderRadius: '6px',
+        fontSize: '11px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        transition: 'background 0.2s ease'
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.background = '#e0e7ff'}
+      onMouseLeave={(e) => e.currentTarget.style.background = '#EEF2FF'}
+    >
+      Upload New
+    </button>
+  )}
+</div>
     </div>
 
     {/* --- TRANSCRIPT --- */}
@@ -1335,34 +1380,56 @@ export default function MyApplicationsPage() {
         </div>
         
         {/* Placeholder for future Transcript re-upload */}
-        {['PENDING', 'REVIEWING'].includes(selectedApplication.status) && (
-  <button
-    onClick={() => {
-      setReassessApp(selectedApplication);
-      setReassessDocType('transcript');
-      setReassessFile(null);
-      setReassessError('');
-    }}
-    style={{
-      padding: '6px 12px',
-      background: '#EEF2FF',
-      color: '#4F46E5',
-      border: '1px solid #c7d2fe',
-      borderRadius: '6px',
-      fontSize: '11px',
-      fontWeight: 600,
-      cursor: 'pointer',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '4px',
-      transition: 'background 0.2s ease'
-    }}
-    onMouseEnter={(e) => e.currentTarget.style.background = '#e0e7ff'}
-    onMouseLeave={(e) => e.currentTarget.style.background = '#EEF2FF'}
-  >
-    {selectedApplication.docs_submitted?.transcript ? 'Replace' : 'Upload'}
-  </button>
-)}
+      <div style={{ display: 'flex', gap: '8px' }}>
+  {selectedApplication.docs_submitted?.transcript && (
+    <button
+      onClick={() => viewApplicantDocument(selectedApplication, 'transcript', 'Transcript')}
+      style={{
+        padding: '6px 12px',
+        background: 'white',
+        color: '#475569',
+        border: '1px solid #CBD5E1',
+        borderRadius: '6px',
+        fontSize: '11px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        transition: 'background 0.2s ease'
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+      onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+    >
+      View
+    </button>
+  )}
+  {['PENDING', 'REVIEWING'].includes(selectedApplication.status) && (
+    <button
+      onClick={() => {
+        setReassessApp(selectedApplication);
+        setReassessDocType('transcript');
+        setReassessFile(null);
+        setReassessError('');
+      }}
+      style={{
+        padding: '6px 12px',
+        background: '#EEF2FF',
+        color: '#4F46E5',
+        border: '1px solid #c7d2fe',
+        borderRadius: '6px',
+        fontSize: '11px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        transition: 'background 0.2s ease'
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.background = '#e0e7ff'}
+      onMouseLeave={(e) => e.currentTarget.style.background = '#EEF2FF'}
+    >
+      {selectedApplication.docs_submitted?.transcript ? 'Replace' : 'Upload'}
+    </button>
+  )}
+</div>
       </div>
     )}
 
@@ -1381,34 +1448,56 @@ export default function MyApplicationsPage() {
           </div>
         </div>
         
-        {['PENDING', 'REVIEWING'].includes(selectedApplication.status) && (
-          <button
-            onClick={() => {
-              setReassessApp(selectedApplication);
-              setReassessDocType('applicationLetter');
-              setReassessFile(null);
-              setReassessError('');
-            }}
-            style={{
-              padding: '6px 12px',
-              background: '#EEF2FF',
-              color: '#4F46E5',
-              border: '1px solid #c7d2fe',
-              borderRadius: '6px',
-              fontSize: '11px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              transition: 'background 0.2s ease'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.background = '#e0e7ff'}
-            onMouseLeave={(e) => e.currentTarget.style.background = '#EEF2FF'}
-          >
-            {selectedApplication.docs_submitted?.applicationLetter ? 'Replace' : 'Upload'}
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: '8px' }}>
+  {selectedApplication.docs_submitted?.applicationLetter && (
+    <button
+      onClick={() => viewApplicantDocument(selectedApplication, 'applicationLetter', 'Application Letter')}
+      style={{
+        padding: '6px 12px',
+        background: 'white',
+        color: '#475569',
+        border: '1px solid #CBD5E1',
+        borderRadius: '6px',
+        fontSize: '11px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        transition: 'background 0.2s ease'
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+      onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+    >
+      View
+    </button>
+  )}
+  {['PENDING', 'REVIEWING'].includes(selectedApplication.status) && (
+    <button
+      onClick={() => {
+        setReassessApp(selectedApplication);
+        setReassessDocType('applicationLetter');
+        setReassessFile(null);
+        setReassessError('');
+      }}
+      style={{
+        padding: '6px 12px',
+        background: '#EEF2FF',
+        color: '#4F46E5',
+        border: '1px solid #c7d2fe',
+        borderRadius: '6px',
+        fontSize: '11px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        transition: 'background 0.2s ease'
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.background = '#e0e7ff'}
+      onMouseLeave={(e) => e.currentTarget.style.background = '#EEF2FF'}
+    >
+      {selectedApplication.docs_submitted?.applicationLetter ? 'Replace' : 'Upload'}
+    </button>
+  )}
+</div>
       </div>
     )}
 
@@ -1428,34 +1517,56 @@ export default function MyApplicationsPage() {
         </div>
         
         {/* Placeholder for future PR re-upload */}
-      {['PENDING', 'REVIEWING'].includes(selectedApplication.status) && (
-  <button
-    onClick={() => {
-      setReassessApp(selectedApplication);
-      setReassessDocType('performanceRating');
-      setReassessFile(null);
-      setReassessError('');
-    }}
-    style={{
-      padding: '6px 12px',
-      background: '#EEF2FF',
-      color: '#4F46E5',
-      border: '1px solid #c7d2fe',
-      borderRadius: '6px',
-      fontSize: '11px',
-      fontWeight: 600,
-      cursor: 'pointer',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '4px',
-      transition: 'background 0.2s ease'
-    }}
-    onMouseEnter={(e) => e.currentTarget.style.background = '#e0e7ff'}
-    onMouseLeave={(e) => e.currentTarget.style.background = '#EEF2FF'}
-  >
-    {selectedApplication.docs_submitted?.performanceRating ? 'Replace' : 'Upload'}
-  </button>
-)}
+     <div style={{ display: 'flex', gap: '8px' }}>
+  {selectedApplication.docs_submitted?.performanceRating && (
+    <button
+      onClick={() => viewApplicantDocument(selectedApplication, 'performanceRating', 'Performance Rating')}
+      style={{
+        padding: '6px 12px',
+        background: 'white',
+        color: '#475569',
+        border: '1px solid #CBD5E1',
+        borderRadius: '6px',
+        fontSize: '11px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        transition: 'background 0.2s ease'
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+      onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+    >
+      View
+    </button>
+  )}
+  {['PENDING', 'REVIEWING'].includes(selectedApplication.status) && (
+    <button
+      onClick={() => {
+        setReassessApp(selectedApplication);
+        setReassessDocType('performanceRating');
+        setReassessFile(null);
+        setReassessError('');
+      }}
+      style={{
+        padding: '6px 12px',
+        background: '#EEF2FF',
+        color: '#4F46E5',
+        border: '1px solid #c7d2fe',
+        borderRadius: '6px',
+        fontSize: '11px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        transition: 'background 0.2s ease'
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.background = '#e0e7ff'}
+      onMouseLeave={(e) => e.currentTarget.style.background = '#EEF2FF'}
+    >
+      {selectedApplication.docs_submitted?.performanceRating ? 'Replace' : 'Upload'}
+    </button>
+  )}
+</div>
       </div>
     )}
 
