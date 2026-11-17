@@ -440,37 +440,32 @@ export default function MyApplicationsPage() {
   };
 
 
-  const [reassessSuccess, setReassessSuccess] = useState(null);
-  const handleReassess = async (app) => {
+    const [reassessSuccess, setReassessSuccess] = useState(null);
+
+  const handleReassess = (app) => {
     if (!reassessFile) {
-    const docLabel = reassessDocType === 'pds' ? 'PDS'
-      : reassessDocType === 'transcript' ? 'Transcript'
-      : reassessDocType === 'performanceRating' ? 'Performance Rating'
-      : 'Application Letter';
-    setReassessError(`Please choose a new ${docLabel} file.`);
-    return;
-  }
+      const docLabel = reassessDocType === 'pds' ? 'PDS'
+        : reassessDocType === 'transcript' ? 'Transcript'
+        : reassessDocType === 'performanceRating' ? 'Performance Rating'
+        : 'Application Letter';
+      setReassessError(`Please choose a new ${docLabel} file.`);
+      return;
+    }
 
-  setReassessLoading(true);
-  setReassessError('');
+    const oldScore = getDisplayScore(app);
+    const docType = reassessDocType;
+    const file = reassessFile;
+    const isPds = docType === 'pds';
 
-  const oldScore = getDisplayScore(app);
-
-  try {
-    const result = await reassessApplication({
-      application: app,
-      newFile: reassessFile,
-      docType: reassessDocType,
-    });
-    const { docType, screeningInProgress } = result;
-
-   setReassessApp(null);
+    // ═══ INSTANT: show the popup immediately (~50ms) ═══
+    setReassessApp(null);
     setReassessFile(null);
+    setReassessLoading(false);
+    setReassessError('');
 
-        if (screeningInProgress) {
+    if (isPds) {
       setReassessSuccess({ app, oldScore, newScore: null, inProgress: true });
     } else {
-      // Transcript/PR: show success popup on top of Details modal
       setReassessSuccess({
         app,
         oldScore: null,
@@ -480,24 +475,41 @@ export default function MyApplicationsPage() {
         docType,
       });
     }
-    await loadApplications();
 
-    if (showDetailsModal && selectedApplication?.id === app.id) {
-      const { data: updatedApp } = await supabase
-        .from('applications')
-        .select('*')
-        .eq('id', app.id)
-        .single();
-      setSelectedApplication({ ...updatedApp, job_postings: app.job_postings });
+    // ═══ BACKGROUND: real upload + refresh (user doesn't wait) ═══
+    processReassessmentInBackground({ app, file, docType });
+  };
+
+  const processReassessmentInBackground = async ({ app, file, docType }) => {
+    try {
+      await reassessApplication({
+        application: app,
+        newFile: file,
+        docType,
+      });
+
+      // Quietly refresh the application list
+      await loadApplications();
+
+      // If the Details modal is still open for this app, refresh it too
+      if (showDetailsModal && selectedApplication?.id === app.id) {
+        const { data: updatedApp } = await supabase
+          .from('applications')
+          .select('*')
+          .eq('id', app.id)
+          .single();
+        if (updatedApp) {
+          setSelectedApplication({ ...updatedApp, job_postings: app.job_postings });
+        }
+      }
+
+      console.log('✅ Background reassessment completed for', docType);
+    } catch (err) {
+      console.error('Re-assessment error:', err);
+      // Non-blocking alert — popup stays open, user sees clear error
+      alert(`Upload failed: ${err.message}. Please try again.`);
     }
-
-  } catch (err) {
-    console.error('Re-assessment error:', err);
-    setReassessError(err.message);
-  } finally {
-    setReassessLoading(false);
-  }
-};
+  };
 
 
   return (
