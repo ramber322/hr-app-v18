@@ -97,25 +97,61 @@ const buildSummary = (applicant) => {
 
   const [metCount, totalCount] = requirementsMet.split('/').map(Number);
 
+  // ── Helpers ─────────────────────────────────────────
+  const metLabels = metFactors
+    .filter(f => !f.toLowerCase().includes('partial score'))
+    .map(extractFactorLabel)
+    .filter(Boolean);
+
+  const shortGap = (factor) => {
+    const colonSplit = factor.split(':');
+    if (colonSplit.length < 2) return factor;
+    const label = colonSplit[0].trim().toLowerCase();
+    const rest = colonSplit[1].trim();
+
+    const ratioMatch = rest.match(/(\d+)\s*\/\s*(\d+)/);
+    if (ratioMatch) {
+      const [, actual, required] = ratioMatch;
+      if (label === 'experience') {
+        return `experience (${actual}/${required} years)`;
+      }
+      if (label === 'training hours') {
+        return `training (${actual}/${required} hours)`;
+      }
+      return `${label} (${actual}/${required})`;
+    }
+
+    const needsMatch = rest.match(/^(.+?)\s*\(needs\s+(.+?)\)$/);
+    if (needsMatch) {
+      const [, actual, required] = needsMatch;
+      if (label === 'education') return `education (${actual.trim()}, needs ${required.trim()})`;
+      if (label === 'eligibility') return `eligibility (${actual.trim()}, needs ${required.trim()})`;
+    }
+
+    return `${label} (${rest})`;
+  };
+
   // ── Meets everything ────────────────────────────────
   if (reducedFactors.length === 0) {
     return `${firstName} meets all ${totalCount} requirements. An excellent fit for this position.`;
   }
 
+  const metText = metLabels.length > 0
+    ? `Satisfies ${joinNatural(metLabels)}, but falls short on ${reducedFactors.map(shortGap).join(' and ')}.`
+    : `Falls short on ${reducedFactors.map(shortGap).join(' and ')}.`;
+
   // ── Strong candidate (75%+) ─────────────────────────
   if (metCount >= totalCount * 0.75) {
-    const metLabels = metFactors.map(extractFactorLabel).filter(Boolean);
-    const metText = joinNatural(metLabels);
-    return `${firstName} meets the ${metText} requirements. However, the applicant currently has ${getGapValue(reducedFactors[0])}. A strong candidate with a minor gap that may be addressed before placement.`;
+    return `${firstName} meets ${metCount} of ${totalCount} requirements. ${metText} A strong candidate with a minor gap that may be addressed before placement.`;
   }
 
   // ── Borderline (50–74%) ─────────────────────────────
   if (metCount >= totalCount * 0.5) {
-    return `${firstName} meets ${metCount} of ${totalCount} requirements. The applicant satisfies key criteria, but gaps exist that may affect suitability. Review the details above before deciding.`;
+    return `${firstName} meets ${metCount} of ${totalCount} requirements. ${metText} The applicant satisfies key criteria, but gaps exist that may affect suitability.`;
   }
 
   // ── Not suitable (<50%) ─────────────────────────────
-  return `${firstName} does not currently meet the position requirements. Not recommended at this time.`;
+  return `${firstName} meets only ${metCount} of ${totalCount} requirements. ${metText} Not recommended at this time.`;
 };
 
 const [showStatusConfirm, setShowStatusConfirm] = useState(false);
@@ -857,214 +893,284 @@ setBulkUpdating(false);
 
   const exportShortlistPDF = () => {
   const isFullyQualified = (candidate) => {
-  return candidate.status === 'SHORTLISTED' || candidate.status === 'QUALIFIED';
-};
-
-    const shortlisted = candidates.filter(c => 
-      (c.status === 'SHORTLISTED' || c.status === 'QUALIFIED') &&
-      isFullyQualified(c)
-    );
-
-    if (shortlisted.length === 0) {
-      alert('No shortlisted candidates to export.');
-      return;
-    }
-
-    const doc = new jsPDF('p', 'mm', 'a4');
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const margin = 20;
-    const lineWidth = pageWidth - (margin * 2);
-
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text('CITY GOVERNMENT OF ILIGAN', pageWidth / 2, 20, { align: 'center' });
-    
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'normal');
-    doc.text('HUMAN RESOURCE MANAGEMENT OFFICE', pageWidth / 2, 28, { align: 'center' });
-
-    doc.setDrawColor(100);
-    doc.line(margin, 32, pageWidth - margin, 32);
-
-    doc.setFontSize(16);
-    doc.setFont('helvetica', 'bold');
-    doc.text('SHORTLIST OF QUALIFIED CANDIDATES', pageWidth / 2, 42, { align: 'center' });
-
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`For the Position of: ${job?.position_title || 'N/A'}`, pageWidth / 2, 50, { align: 'center' });
-
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'italic');
-    doc.text('All candidates below satisfy the encoded qualification criteria for the position.', pageWidth / 2, 58, { align: 'center' });
-
-    const today = new Date().toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    });
-
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Date Generated: ${today}`, margin, 68);
-    doc.text(`Item No.: ${job?.item_no || 'N/A'}`, margin, 75);
-    doc.text(`Total Applicants: ${candidates.length}  |  Shortlisted: ${shortlisted.length}`, margin, 82);
-
-    const tableData = shortlisted.map((c, index) => {
-      let experienceDisplay = 'N/A';
-      let status = 'FIT';
-      
-      if (c.experience && c.experience !== 'N/A') {
-        const match = c.experience.match(/([\d.]+)\/([\d.]+)/);
-        if (match) {
-          const actual = parseFloat(match[1]);
-          const required = parseFloat(match[2]);
-          if (required === 0) {
-            experienceDisplay = 'Not Required';
-          } else {
-            experienceDisplay = `${actual}/${required} yrs`;
-            if (actual > required) {
-              status = 'HIGHLY FIT';
-            }
-          }
-        } else {
-          experienceDisplay = c.experience;
-        }
-      }
-
-      const educationDisplay = cleanEducationText(c.education) || 'N/A';
-      if (educationDisplay.includes('Master') || educationDisplay.includes('PhD')) {
-        status = 'HIGHLY FIT';
-      }
-
-      return [
-        index + 1,
-        c.applicant_name,
-        educationDisplay,
-        c.eligibility !== 'None' && c.eligibility !== 'N/A' 
-          ? c.eligibility 
-          : 'N/A',
-        experienceDisplay,
-        status
-      ];
-    });
-
-    autoTable(doc, {
-      startY: 88,
-      head: [['#', 'Name', 'Education', 'Eligibility', 'Experience', 'Status']],
-      body: tableData,
-      theme: 'grid',
-      styles: {
-        fontSize: 8,
-        cellPadding: 2,
-        overflow: 'linebreak',
-        valign: 'middle',
-      },
-      headStyles: {
-        fillColor: [79, 70, 229],
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 8,
-        halign: 'center',
-      },
-      alternateRowStyles: {
-        fillColor: [245, 247, 250],
-      },
-      columnStyles: {
-        0: { cellWidth: 8, halign: 'center' },
-        1: { cellWidth: 38, halign: 'left' },
-        2: { cellWidth: 28, halign: 'left' },
-        3: { cellWidth: 30, halign: 'left' },
-        4: { cellWidth: 30, halign: 'left' },
-        5: { cellWidth: 28, halign: 'center' },
-      },
-      margin: { left: margin, right: margin },
-      tableWidth: lineWidth,
-    });
-
-    let finalY = doc.lastAutoTable.finalY + 8;
-
-    doc.setDrawColor(100);
-    doc.line(margin, finalY, pageWidth - margin, finalY);
-    finalY += 8;
-
-    const highlyFit = shortlisted.filter(c => {
-      let exceeds = false;
-      
-      if (c.experience && c.experience !== 'N/A') {
-        const match = c.experience.match(/([\d.]+)\/([\d.]+)/);
-        if (match) {
-          const actual = parseFloat(match[1]);
-          const required = parseFloat(match[2]);
-          if (required > 0 && actual > required) exceeds = true;
-        }
-      }
-      const edu = cleanEducationText(c.education);
-      if (edu.includes('Master') || edu.includes('PhD')) exceeds = true;
-      
-      return exceeds;
-    }).length;
-
-    const fit = shortlisted.length - highlyFit;
-
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.text('SUMMARY', margin, finalY);
-    finalY += 6;
-
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Total Qualified: ${shortlisted.length}`, margin, finalY);
-    finalY += 5;
-    doc.text(`Highly Fit: ${highlyFit}`, margin + 5, finalY);
-    finalY += 5;
-    doc.text(`Fit: ${fit}`, margin + 5, finalY);
-    finalY += 8;
-
-    if (finalY > 250) {
-      doc.addPage();
-      finalY = 20;
-    }
-
-    doc.setDrawColor(100);
-    doc.line(margin, finalY, pageWidth - margin, finalY);
-
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Prepared by:', margin, finalY + 12);
-    doc.text('Approved by:', pageWidth - margin - 35, finalY + 12);
-
-    doc.setFont('helvetica', 'normal');
-    doc.text('_________________________', margin, finalY + 22);
-    doc.text('_________________________', pageWidth - margin - 35, finalY + 22);
-
-    doc.setFontSize(8);
-    doc.text('HRMO Designate', margin, finalY + 30);
-    doc.text('HRMPSB Chairperson', pageWidth - margin - 35, finalY + 30);
-
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'italic');
-    doc.text('This is a certified true copy of the shortlist.', pageWidth / 2, finalY + 42, { align: 'center' });
-
-    doc.setFontSize(40);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(200, 200, 200);
-    doc.text('FOR HRMPSB REVIEW', pageWidth / 2, 160, { align: 'center', angle: 45 });
-    doc.setTextColor(0);
-
-    const pageCount = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(7);
-      doc.setTextColor(150);
-      doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, 285, { align: 'center' });
-      doc.text('FOR HRMPSB REVIEW USE', margin, 285);
-      doc.text(`Generated: ${today}`, pageWidth - margin, 285, { align: 'right' });
-      doc.setTextColor(0);
-    }
-
-    doc.save(`Shortlist_${job?.position_title?.replace(/\s+/g, '_') || 'Candidates'}_${new Date().toISOString().split('T')[0]}.pdf`);
+    return candidate.status === 'SHORTLISTED' || candidate.status === 'QUALIFIED';
   };
+
+  const shortlisted = candidates.filter(c => 
+    (c.status === 'SHORTLISTED' || c.status === 'QUALIFIED') &&
+    isFullyQualified(c)
+  );
+
+  if (shortlisted.length === 0) {
+    alert('No shortlisted candidates to export.');
+    return;
+  }
+
+  const doc = new jsPDF('p', 'mm', 'a4');
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 20;
+  const lineWidth = pageWidth - (margin * 2);
+
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text('CITY GOVERNMENT OF ILIGAN', pageWidth / 2, 20, { align: 'center' });
+  
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'normal');
+  doc.text('HUMAN RESOURCE MANAGEMENT OFFICE', pageWidth / 2, 28, { align: 'center' });
+
+  doc.setDrawColor(100);
+  doc.line(margin, 32, pageWidth - margin, 32);
+
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.text('SHORTLIST OF QUALIFIED CANDIDATES', pageWidth / 2, 42, { align: 'center' });
+
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`For the Position of: ${job?.position_title || 'N/A'}`, pageWidth / 2, 50, { align: 'center' });
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'italic');
+  doc.text('All candidates below satisfy the encoded qualification criteria for the position.', pageWidth / 2, 58, { align: 'center' });
+
+  const today = new Date().toLocaleDateString('en-US', { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  });
+
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Date Generated: ${today}`, margin, 68);
+  doc.text(`Item No.: ${job?.item_no || 'N/A'}`, margin, 75);
+  doc.text(`Total Applicants: ${candidates.length}  |  Shortlisted: ${shortlisted.length}`, margin, 82);
+
+  const tableData = shortlisted.map((c, index) => {
+    let experienceDisplay = 'N/A';
+    let status = 'FIT';
+    
+    if (c.experience && c.experience !== 'N/A') {
+      const match = c.experience.match(/([\d.]+)\/([\d.]+)/);
+      if (match) {
+        const actual = parseFloat(match[1]);
+        const required = parseFloat(match[2]);
+        if (required === 0) {
+          experienceDisplay = 'Not Required';
+        } else {
+          experienceDisplay = `${actual}/${required} yrs`;
+          if (actual > required) {
+            status = 'HIGHLY FIT';
+          }
+        }
+      } else {
+        experienceDisplay = c.experience;
+      }
+    }
+
+    const educationDisplay = cleanEducationText(c.education) || 'N/A';
+    if (educationDisplay.includes('Master') || educationDisplay.includes('PhD')) {
+      status = 'HIGHLY FIT';
+    }
+
+    return [
+      index + 1,
+      c.applicant_name,
+      educationDisplay,
+      c.eligibility !== 'None' && c.eligibility !== 'N/A' 
+        ? c.eligibility 
+        : 'N/A',
+      experienceDisplay,
+      status
+    ];
+  });
+
+  autoTable(doc, {
+    startY: 88,
+    head: [['#', 'Name', 'Education', 'Eligibility', 'Experience', 'Status']],
+    body: tableData,
+    theme: 'grid',
+    styles: {
+      fontSize: 8,
+      cellPadding: 2,
+      overflow: 'linebreak',
+      valign: 'middle',
+    },
+    headStyles: {
+      fillColor: [79, 70, 229],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8,
+      halign: 'center',
+    },
+    alternateRowStyles: {
+      fillColor: [245, 247, 250],
+    },
+    columnStyles: {
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 38, halign: 'left' },
+      2: { cellWidth: 28, halign: 'left' },
+      3: { cellWidth: 30, halign: 'left' },
+      4: { cellWidth: 30, halign: 'left' },
+      5: { cellWidth: 28, halign: 'center' },
+    },
+    margin: { left: margin, right: margin },
+    tableWidth: lineWidth,
+  });
+
+  let finalY = doc.lastAutoTable.finalY + 8;
+
+  doc.setDrawColor(100);
+  doc.line(margin, finalY, pageWidth - margin, finalY);
+  finalY += 8;
+
+  const highlyFit = shortlisted.filter(c => {
+    let exceeds = false;
+    
+    if (c.experience && c.experience !== 'N/A') {
+      const match = c.experience.match(/([\d.]+)\/([\d.]+)/);
+      if (match) {
+        const actual = parseFloat(match[1]);
+        const required = parseFloat(match[2]);
+        if (required > 0 && actual > required) exceeds = true;
+      }
+    }
+    const edu = cleanEducationText(c.education);
+    if (edu.includes('Master') || edu.includes('PhD')) exceeds = true;
+    
+    return exceeds;
+  }).length;
+
+  const fit = shortlisted.length - highlyFit;
+
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('SUMMARY', margin, finalY);
+  finalY += 6;
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Total Qualified: ${shortlisted.length}`, margin, finalY);
+  finalY += 5;
+  doc.text(`Highly Fit: ${highlyFit}`, margin + 5, finalY);
+  finalY += 5;
+  doc.text(`Fit: ${fit}`, margin + 5, finalY);
+  finalY += 8;
+
+  // ── AI ASSESSMENT SUMMARY TABLE ──
+  // ALWAYS starts on a fresh page
+  doc.addPage();
+  finalY = 20;
+
+  doc.setDrawColor(100);
+  doc.line(margin, finalY, pageWidth - margin, finalY);
+  finalY += 10;
+
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text('CANDIDATE ASSESSMENT SUMMARY', pageWidth / 2, finalY, { align: 'center' });
+  finalY += 6;
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'italic');
+  doc.setTextColor(100);
+  doc.text(
+    'These assessment narratives are provided to assist the HRMPSB in deliberation and do not constitute a final hiring decision',
+    pageWidth / 2,
+    finalY,
+    { align: 'center', maxWidth: lineWidth }
+  );
+  doc.setTextColor(0);
+  finalY += 8;
+
+  const assessmentRows = shortlisted.map((c) => {
+    const narrative = buildSummary(c);
+    return [
+      c.applicant_name,
+      `${c.ai_match_score}%`,
+      narrative,
+    ];
+  });
+
+  autoTable(doc, {
+    startY: finalY,
+    head: [['Candidate Name', 'Fit Score', 'Assessment Summary']],
+    body: assessmentRows,
+    theme: 'grid',
+    styles: {
+      fontSize: 8,
+      cellPadding: 3,
+      overflow: 'linebreak',
+      valign: 'top',
+    },
+    headStyles: {
+      fillColor: [79, 70, 229],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8,
+      halign: 'left',
+    },
+    alternateRowStyles: {
+      fillColor: [245, 247, 250],
+    },
+    columnStyles: {
+      0: { cellWidth: 45, halign: 'left', fontStyle: 'bold' },
+      1: { cellWidth: 20, halign: 'center' },
+      2: { cellWidth: lineWidth - 65, halign: 'left' },
+    },
+    margin: { left: margin, right: margin },
+    tableWidth: lineWidth,
+  });
+
+  finalY = doc.lastAutoTable.finalY + 8;
+
+  if (finalY > 200) {
+    doc.addPage();
+    finalY = 20;
+  }
+
+  doc.setDrawColor(100);
+  doc.line(margin, finalY, pageWidth - margin, finalY);
+
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Prepared by:', margin, finalY + 12);
+  doc.text('Approved by:', pageWidth - margin - 35, finalY + 12);
+
+  doc.setFont('helvetica', 'normal');
+  doc.text('_________________________', margin, finalY + 22);
+  doc.text('_________________________', pageWidth - margin - 35, finalY + 22);
+
+  doc.setFontSize(8);
+  doc.text('HRMO Designate', margin, finalY + 30);
+  doc.text('HRMPSB Chairperson', pageWidth - margin - 35, finalY + 30);
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'italic');
+  doc.text('This is a certified true copy of the shortlist.', pageWidth / 2, finalY + 42, { align: 'center' });
+
+     // ── WATERMARK ON PAGE 1 ONLY ──
+  doc.setPage(1);
+  doc.setFontSize(40);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(210, 210, 210);
+  doc.text('FOR HRMPSB REVIEW', pageWidth / 2, 160, { align: 'center', angle: 45 });
+  doc.setTextColor(0);
+
+  // ── FOOTER ON EVERY PAGE ──
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7);
+    doc.setTextColor(150);
+    doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, 285, { align: 'center' });
+    doc.text('FOR HRMPSB REVIEW USE', margin, 285);
+    doc.text(`Generated: ${today}`, pageWidth - margin, 285, { align: 'right' });
+    doc.setTextColor(0);
+  }
+
+  doc.save(`Shortlist_${job?.position_title?.replace(/\s+/g, '_') || 'Candidates'}_${new Date().toISOString().split('T')[0]}.pdf`);
+};
 
   const updateCandidateStatus = async (applicationId, newStatus) => {
   setUpdatingStatus(true);
